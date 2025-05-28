@@ -25,9 +25,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import type { DataPoint, Metric } from "@/types";
-import { PlusCircle, NotebookPen } from "lucide-react";
+import { PlusCircle, Edit3, NotebookPen } from "lucide-react"; // Added Edit3
 import React, { useEffect } from "react";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 const dataPointFormSchema = z.object({
   value: z.coerce.number({ invalid_type_error: "Value must be a number." }),
@@ -41,31 +41,37 @@ type DataPointFormValues = z.infer<typeof dataPointFormSchema>;
 interface AddDataPointDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (dataPoint: Omit<DataPoint, "id" | "metricId">) => void;
+  onSave: (dataPoint: Omit<DataPoint, "metricId">, id?: string) => void; // Updated onSave signature
   metric: Metric | null;
+  dataPointToEdit?: DataPoint | null; // Added dataPointToEdit
 }
 
-export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataPointDialogProps) {
+export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointToEdit }: AddDataPointDialogProps) {
   const form = useForm<DataPointFormValues>({
     resolver: zodResolver(dataPointFormSchema),
-    defaultValues: {
-      value: '' as unknown as number,
-      date: new Date(),
-      time: format(new Date(), "HH:mm"),
-      notes: "",
-    },
+    // Default values will be set by useEffect
   });
 
   useEffect(() => {
     if (isOpen) {
-      form.reset({
-        value: '' as unknown as number,
-        date: new Date(),
-        time: format(new Date(), "HH:mm"),
-        notes: "",
-      });
+      if (dataPointToEdit) {
+        const timestampDate = parseISO(dataPointToEdit.timestamp);
+        form.reset({
+          value: dataPointToEdit.value,
+          date: timestampDate,
+          time: format(timestampDate, "HH:mm"),
+          notes: dataPointToEdit.notes || "",
+        });
+      } else {
+        form.reset({
+          value: '' as unknown as number, // Ensure it's treated as controlled
+          date: new Date(),
+          time: format(new Date(), "HH:mm"),
+          notes: "",
+        });
+      }
     }
-  }, [isOpen, form]);
+  }, [isOpen, dataPointToEdit, form]);
 
   const handleSubmit = (values: DataPointFormValues) => {
     if (!metric) return;
@@ -74,28 +80,33 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
     
     const combinedDateTime = new Date(selectedDateValue);
     const [hours, minutes] = timeString.split(':').map(Number);
-    combinedDateTime.setHours(hours, minutes, 0, 0); // Set seconds and milliseconds to 0 for consistency
+    combinedDateTime.setHours(hours, minutes, 0, 0);
 
-    onSave({
+    const dataPointPayload: Omit<DataPoint, "metricId"> = {
+      id: dataPointToEdit ? dataPointToEdit.id : Date.now().toString(), // Use existing id if editing
       value,
       timestamp: combinedDateTime.toISOString(),
       notes,
-    });
+    };
+    
+    onSave(dataPointPayload, dataPointToEdit?.id);
     onClose();
   };
 
   if (!metric) return null;
+
+  const isEditing = !!dataPointToEdit;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <PlusCircle className="mr-2 h-5 w-5" />
-            Add Data for {metric.name}
+            {isEditing ? <Edit3 className="mr-2 h-5 w-5" /> : <PlusCircle className="mr-2 h-5 w-5" />}
+            {isEditing ? "Edit Data Point" : `Add Data for ${metric.name}`}
           </DialogTitle>
           <DialogDescription>
-            Log a new data point for &quot;{metric.name}&quot; (Unit: {metric.unit}).
+            {isEditing ? `Update the details for this data point.` : `Log a new data point for "${metric.name}" (Unit: ${metric.unit}).`}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -162,7 +173,9 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" variant="default">Add Data Point</Button>
+              <Button type="submit" variant="default">
+                {isEditing ? "Save Changes" : "Add Data Point"}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

@@ -46,21 +46,22 @@ export default function MetricDetailPage() {
   const [metric, setMetric] = useState<Metric | null>(null);
   const [metricDataPoints, setMetricDataPoints] = useState<DataPoint[]>([]);
   
-  const [isAddDataPointDialogOpen, setIsAddDataPointDialogOpen] = useState(false);
+  const [isDataPointDialogOpen, setIsDataPointDialogOpen] = useState(false); // Renamed for clarity
+  const [dataPointToEdit, setDataPointToEdit] = useState<DataPoint | null>(null);
   const [isEditMetricDialogOpen, setIsEditMetricDialogOpen] = useState(false);
   const [isDeleteMetricDialogOpen, setIsDeleteMetricDialogOpen] = useState(false);
-  const [dataPointToDelete, setDataPointToDelete] = useState<string | null>(null);
+  const [dataPointIdToDelete, setDataPointIdToDelete] = useState<string | null>(null); // Renamed for clarity
 
   const { toast } = useToast();
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true); // Component is mounted
+    setIsMounted(true); 
   }, []);
 
 
   useEffect(() => {
-    if (!isMounted) return; // Ensure component is mounted before accessing localStorage data
+    if (!isMounted) return; 
 
     const foundMetric = metrics.find(m => m.id === metricId);
     if (foundMetric) {
@@ -69,22 +70,32 @@ export default function MetricDetailPage() {
         .filter(dp => dp.metricId === metricId)
         .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setMetricDataPoints(relatedDataPoints);
-    } else if (metrics.length > 0) { // only redirect if not found after initial load and metrics are loaded
+    } else if (metrics.length > 0) { 
       toast({ title: "Metric Not Found", description: "The requested metric could not be found.", variant: "destructive" });
       router.push('/');
     }
   }, [metricId, metrics, dataPoints, router, toast, isMounted]);
 
 
-  const handleSaveDataPoint = (dataPointData: Omit<DataPoint, "id" | "metricId">) => {
+  const handleSaveDataPoint = (dataPointData: Omit<DataPoint, "metricId">, idToUpdate?: string) => {
     if (!metric) return;
-    const newDataPoint: DataPoint = {
-      ...dataPointData,
-      id: Date.now().toString(),
-      metricId: metric.id,
-    };
-    setDataPoints(prevDataPoints => [...prevDataPoints, newDataPoint]);
-    toast({ title: "Data Point Added", description: `Value ${newDataPoint.value} for "${metric.name}" recorded.` });
+
+    if (idToUpdate) { // Editing existing data point
+      setDataPoints(prevDataPoints =>
+        prevDataPoints.map(dp =>
+          dp.id === idToUpdate ? { ...dataPointData, metricId: metric.id } : dp
+        )
+      );
+      toast({ title: "Data Point Updated", description: `Data point for "${metric.name}" has been updated.` });
+    } else { // Adding new data point
+      const newDataPoint: DataPoint = {
+        ...dataPointData, // id is already in dataPointData from dialog
+        metricId: metric.id,
+      };
+      setDataPoints(prevDataPoints => [...prevDataPoints, newDataPoint]);
+      toast({ title: "Data Point Added", description: `Value ${newDataPoint.value} for "${metric.name}" recorded.` });
+    }
+    setDataPointToEdit(null); // Clear editing state
   };
 
   const handleSaveMetric = (metricData: Omit<Metric, "id" | "createdAt">) => {
@@ -97,8 +108,8 @@ export default function MetricDetailPage() {
             ...metricData, 
             id: m.id, 
             createdAt: m.createdAt,
-            color: metricData.color || m.color || defaultMetricColor, // ensure color persists or defaults
-            isPinned: metricData.isPinned !== undefined ? metricData.isPinned : m.isPinned, // ensure isPinned persists
+            color: metricData.color || m.color || defaultMetricColor,
+            isPinned: metricData.isPinned !== undefined ? metricData.isPinned : m.isPinned,
           } 
         : m
       )
@@ -114,11 +125,22 @@ export default function MetricDetailPage() {
     router.push('/');
   };
 
-  const handleDeleteDataPoint = (dataPointId: string) => {
-    setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.id !== dataPointId));
+  const handleDeleteDataPoint = (dpId: string) => {
+    setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.id !== dpId));
     toast({ title: "Data Point Deleted", description: "The data point has been removed." });
-    setDataPointToDelete(null);
+    setDataPointIdToDelete(null);
   };
+
+  const openEditDataPointDialog = (dataPoint: DataPoint) => {
+    setDataPointToEdit(dataPoint);
+    setIsDataPointDialogOpen(true);
+  };
+
+  const openAddDataPointDialog = () => {
+    setDataPointToEdit(null); // Ensure not in edit mode
+    setIsDataPointDialogOpen(true);
+  };
+
 
   if (!isMounted || !metric) {
     return (
@@ -176,7 +198,7 @@ export default function MetricDetailPage() {
               Recorded data points for {metric.name}.
             </CardDescription>
           </div>
-          <Button onClick={() => setIsAddDataPointDialogOpen(true)} variant="default" size="lg">
+          <Button onClick={openAddDataPointDialog} variant="default" size="lg">
             <PlusCircle className="mr-2 h-5 w-5" /> Add Data Point
           </Button>
         </CardHeader>
@@ -191,7 +213,7 @@ export default function MetricDetailPage() {
                     <TableHead className="w-[200px]">Timestamp</TableHead>
                     <TableHead className="text-right">Value ({metric.unit})</TableHead>
                     <TableHead>Notes</TableHead>
-                    <TableHead className="w-[100px] text-right">Actions</TableHead>
+                    <TableHead className="w-[120px] text-right">Actions</TableHead> 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -201,7 +223,10 @@ export default function MetricDetailPage() {
                       <TableCell className="text-right font-medium">{dp.value}</TableCell>
                       <TableCell className="max-w-xs truncate" title={dp.notes}>{dp.notes || "-"}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => setDataPointToDelete(dp.id)} className="text-destructive hover:text-destructive/80">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDataPointDialog(dp)} className="text-muted-foreground hover:text-foreground">
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDataPointIdToDelete(dp.id)} className="text-destructive hover:text-destructive/80">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -215,10 +240,11 @@ export default function MetricDetailPage() {
       </Card>
 
       <AddDataPointDialog
-        isOpen={isAddDataPointDialogOpen}
-        onClose={() => setIsAddDataPointDialogOpen(false)}
+        isOpen={isDataPointDialogOpen}
+        onClose={() => { setIsDataPointDialogOpen(false); setDataPointToEdit(null); }}
         onSave={handleSaveDataPoint}
         metric={metric}
+        dataPointToEdit={dataPointToEdit}
       />
       <AddMetricDialog
         isOpen={isEditMetricDialogOpen}
@@ -243,7 +269,7 @@ export default function MetricDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={!!dataPointToDelete} onOpenChange={(open) => !open && setDataPointToDelete(null)}>
+      <AlertDialog open={!!dataPointIdToDelete} onOpenChange={(open) => !open && setDataPointIdToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Data Point?</AlertDialogTitle>
@@ -252,8 +278,8 @@ export default function MetricDetailPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDataPointToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => dataPointToDelete && handleDeleteDataPoint(dataPointToDelete)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogCancel onClick={() => setDataPointIdToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => dataPointIdToDelete && handleDeleteDataPoint(dataPointIdToDelete)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
