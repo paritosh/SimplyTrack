@@ -46,7 +46,7 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
   const form = useForm<DataPointFormValues>({
     resolver: zodResolver(dataPointFormSchema),
     defaultValues: {
-      value: undefined,
+      value: '' as unknown as number, // Initialize with empty string for controlled input
       timestamp: new Date(),
       notes: "",
     },
@@ -55,7 +55,7 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
   useEffect(() => {
     if (isOpen) {
       form.reset({
-        value: undefined,
+        value: '' as unknown as number, // Reset with empty string
         timestamp: new Date(),
         notes: "",
       });
