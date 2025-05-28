@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Line,
   LineChart,
@@ -10,11 +10,13 @@ import {
   Tooltip,
   CartesianGrid,
   Legend,
+  ResponsiveContainer // Replaced RechartsPrimitive.ResponsiveContainer
 } from "recharts";
 import {
-  ChartContainer,
+  ChartContainer, // Keep this if it's a ShadCN/ui wrapper
   ChartLegendContent,
   ChartConfig,
+  ChartStyle // Added ChartStyle
 } from "@/components/ui/chart";
 import type { DataPoint, Metric } from "@/types";
 import { format, startOfDay, startOfMonth, startOfYear } from "date-fns";
@@ -40,7 +42,7 @@ interface ProcessedDataPoint {
   timestamp: number;
   value: number;
   notes?: string;
-  originalDataPointCount?: number; // Number of original data points that were aggregated
+  originalDataPointCount?: number;
 }
 
 interface AggregationGroup {
@@ -52,12 +54,16 @@ interface AggregationGroup {
 export function MetricChart({ metric, data }: MetricChartProps) {
   const [intervalType, setIntervalType] = useState<IntervalType>('raw');
   const [operationType, setOperationType] = useState<OperationType>('sum');
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleIntervalChange = (value: IntervalType) => {
     setIntervalType(value);
     if (value === 'raw') {
-      // No specific operation needed for raw, but we can keep the current one or reset
-      // setOperationType('sum'); // or some placeholder
+      // No specific operation needed for raw
     } else if (value === 'daily') {
       setOperationType('sum');
     } else { // monthly, yearly
@@ -115,7 +121,7 @@ export function MetricChart({ metric, data }: MetricChartProps) {
     return Object.values(aggregationMap).map(group => {
       let aggregatedValue: number;
       const count = group.values.length;
-      if (count === 0) return null; // Should not happen if logic is correct
+      if (count === 0) return null;
 
       switch (operationType) {
         case 'sum':
@@ -151,6 +157,16 @@ export function MetricChart({ metric, data }: MetricChartProps) {
     }).filter(Boolean) as ProcessedDataPoint[];
   }, [data, intervalType, operationType]);
 
+  if (!isClient) {
+    return (
+      <Card className="w-full h-[400px] flex items-center justify-center shadow-md">
+        <CardContent className="text-center">
+          <p className="text-lg text-muted-foreground">Loading chart...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
   if (!data || data.length === 0) {
     return (
       <Card className="w-full h-[400px] flex items-center justify-center shadow-md">
@@ -174,13 +190,17 @@ export function MetricChart({ metric, data }: MetricChartProps) {
     }
     return `${opLabel} ${metric.unit}`;
   };
+  
+  // Use a unique key for the chart config to ensure ChartStyle updates
+  const chartId = `metric-chart-${metric.id}`;
 
   const chartConfig = {
-    value: {
+    value: { // This key 'value' must match dataKey in <Line />
       label: getChartDisplayLabel(),
-      color: "hsl(var(--primary))",
+      color: metric.color || "hsl(var(--primary))",
     },
   } satisfies ChartConfig;
+
 
   const getXAxisTickFormatter = () => {
     switch (intervalType) {
@@ -260,106 +280,109 @@ export function MetricChart({ metric, data }: MetricChartProps) {
                 <p className="text-muted-foreground">Not enough data to display {intervalType} {operationType} aggregation.</p>
             </div>
         ) : (
-        <ChartContainer config={chartConfig} className="h-[400px] w-full">
-          <LineChart
-            data={processedChartData}
-            margin={{ top: 5, right: 30, left: 5, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="timestamp"
-              type="number"
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={getXAxisTickFormatter()}
-              stroke="hsl(var(--muted-foreground))"
-              tickMargin={10}
-              interval={processedChartData.length > 30 && intervalType === 'raw' ? 'preserveStartEnd' : undefined}
-              minTickGap={intervalType === 'raw' ? 80 : (intervalType === 'daily' ? 40 : 20)}
-            />
-            <YAxis 
-              stroke="hsl(var(--muted-foreground))"
-              tickMargin={10}
-              domain={['auto', 'auto']}
-              allowDataOverflow={true}
-              label={{ 
-                value: operationType === 'count' && intervalType !== 'raw' ? 'Count of Entries' : metric.unit, 
-                angle: -90, 
-                position: 'insideLeft', 
-                offset: -5,
-                style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))', fontSize: '0.875rem' }
-              }}
-            />
-            <Tooltip
-              content={({ active, payload, label }) => {
-                if (active && payload && payload.length && typeof label === 'number') {
-                  const dataPoint = payload[0].payload as ProcessedDataPoint;
-                  const value = dataPoint.value;
-                  
-                  let formattedValue: string;
-                  let displayUnit: string;
+        <ChartContainer config={chartConfig} className="h-[400px] w-full" id={chartId}>
+          {/* ChartStyle is now managed by ChartContainer if it's a custom component, or ensure it's applied correctly */}
+          <ResponsiveContainer>
+            <LineChart
+              data={processedChartData}
+              margin={{ top: 5, right: 30, left: 5, bottom: 20 }} // Increased bottom margin for XAxis labels
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="timestamp"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={getXAxisTickFormatter()}
+                stroke="hsl(var(--muted-foreground))"
+                tickMargin={10}
+                interval={processedChartData.length > 30 && intervalType === 'raw' ? 'preserveStartEnd' : undefined}
+                minTickGap={intervalType === 'raw' ? 80 : (intervalType === 'daily' ? 40 : 20)}
+              />
+              <YAxis 
+                stroke="hsl(var(--muted-foreground))"
+                tickMargin={10}
+                domain={['auto', 'auto']}
+                allowDataOverflow={true}
+                label={{ 
+                  value: operationType === 'count' && intervalType !== 'raw' ? 'Count of Entries' : metric.unit, 
+                  angle: -90, 
+                  position: 'insideLeft', 
+                  offset: -5,
+                  style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))', fontSize: '0.875rem' }
+                }}
+              />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length && typeof label === 'number') {
+                    const dataPoint = payload[0].payload as ProcessedDataPoint;
+                    const value = dataPoint.value;
+                    
+                    let formattedValue: string;
+                    let displayUnit: string;
 
-                  if (intervalType !== 'raw' && operationType === 'count') {
-                    formattedValue = Number(value).toLocaleString();
-                    displayUnit = value === 1 ? 'entry' : 'entries';
-                  } else {
-                    formattedValue = Number(value).toLocaleString(undefined, { 
-                      maximumFractionDigits: 2, 
-                      minimumFractionDigits: (value % 1 !== 0 && (operationType === 'average' || intervalType === 'raw')) ? 2 : 0 
-                    });
-                    displayUnit = metric.unit;
-                  }
+                    if (intervalType !== 'raw' && operationType === 'count') {
+                      formattedValue = Number(value).toLocaleString();
+                      displayUnit = value === 1 ? 'entry' : 'entries';
+                    } else {
+                      formattedValue = Number(value).toLocaleString(undefined, { 
+                        maximumFractionDigits: 2, 
+                        minimumFractionDigits: (value % 1 !== 0 && (operationType === 'average' || intervalType === 'raw')) ? 2 : 0 
+                      });
+                      displayUnit = metric.unit;
+                    }
 
-                  return (
-                    <div className="rounded-lg border bg-background p-2.5 shadow-sm max-w-xs">
-                      <div className="grid grid-cols-1 gap-1.5">
-                        <span className="text-sm font-medium">
-                          {getTooltipDateFormat(label)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {getTooltipValuePrefix()}{metric.name}: <span className="font-bold text-foreground">{formattedValue} {displayUnit}</span>
-                        </span>
-                        {intervalType !== 'raw' && dataPoint.originalDataPointCount && (
-                            <span className="text-xs text-muted-foreground">
-                                (Based on {dataPoint.originalDataPointCount} data point{dataPoint.originalDataPointCount !== 1 ? 's' : ''})
-                            </span>
-                        )}
-                        {intervalType === 'raw' && dataPoint.notes && (
-                           <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
-                             Note: {dataPoint.notes}
-                           </span>
-                        )}
-                         {intervalType !== 'raw' && dataPoint.notes && ( // Aggregated notes
-                           <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
-                             Notes summary: {dataPoint.notes}
-                           </span>
-                        )}
+                    return (
+                      <div className="rounded-lg border bg-background p-2.5 shadow-sm max-w-xs">
+                        <div className="grid grid-cols-1 gap-1.5">
+                          <span className="text-sm font-medium">
+                            {getTooltipDateFormat(label)}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            {getTooltipValuePrefix()}{metric.name}: <span className="font-bold text-foreground">{formattedValue} {displayUnit}</span>
+                          </span>
+                          {intervalType !== 'raw' && dataPoint.originalDataPointCount && (
+                              <span className="text-xs text-muted-foreground">
+                                  (Based on {dataPoint.originalDataPointCount} data point{dataPoint.originalDataPointCount !== 1 ? 's' : ''})
+                              </span>
+                          )}
+                          {intervalType === 'raw' && dataPoint.notes && (
+                             <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
+                               Note: {dataPoint.notes}
+                             </span>
+                          )}
+                           {intervalType !== 'raw' && dataPoint.notes && ( 
+                             <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
+                               Notes summary: {dataPoint.notes}
+                             </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Legend content={<ChartLegendContent />} />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              dot={{
-                r: processedChartData.length < 50 || intervalType !== 'raw' ? 4 : 2,
-                fill: "var(--color-value)",
-                strokeWidth: 2,
-                stroke: "hsl(var(--background))"
-              }}
-              activeDot={{
-                r: 6,
-                fill: "var(--color-value)",
-                strokeWidth: 2,
-                stroke: "hsl(var(--background))"
-              }}
-            />
-          </LineChart>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend content={<ChartLegendContent />} verticalAlign="top" />
+              <Line
+                type="monotone"
+                dataKey="value" // This must match the key in chartConfig (e.g., chartConfig.value)
+                stroke="var(--color-value)" // Uses the color defined in chartConfig through ChartStyle
+                strokeWidth={2}
+                dot={{
+                  r: processedChartData.length < 50 || intervalType !== 'raw' ? 4 : 2,
+                  fill: "var(--color-value)",
+                  strokeWidth: 2,
+                  stroke: "hsl(var(--background))"
+                }}
+                activeDot={{
+                  r: 6,
+                  fill: "var(--color-value)",
+                  strokeWidth: 2,
+                  stroke: "hsl(var(--background))"
+                }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </ChartContainer>
         )}
       </CardContent>

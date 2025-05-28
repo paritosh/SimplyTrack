@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -15,7 +16,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/components/ui/card"; // Added import
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +26,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
+
+const defaultMetricColor = "hsl(var(--primary))";
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useLocalStorage<Metric[]>("metrics", []);
@@ -49,14 +52,17 @@ export default function DashboardPage() {
   const handleSaveMetric = (metricData: Omit<Metric, "id" | "createdAt">, id?: string) => {
     if (id) { // Editing existing metric
       setMetrics(prevMetrics => 
-        prevMetrics.map(m => m.id === id ? { ...m, ...metricData } : m)
+        prevMetrics.map(m => m.id === id ? { ...m, ...metricData, id: m.id, createdAt: m.createdAt } : m)
       );
       toast({ title: "Metric Updated", description: `"${metricData.name}" has been updated.` });
     } else { // Adding new metric
       const newMetric: Metric = {
-        ...metricData,
         id: Date.now().toString(), // Simple ID generation
         createdAt: new Date().toISOString(),
+        name: metricData.name,
+        unit: metricData.unit,
+        color: metricData.color || defaultMetricColor,
+        isPinned: !!metricData.isPinned,
       };
       setMetrics(prevMetrics => [...prevMetrics, newMetric]);
       toast({ title: "Metric Added", description: `"${newMetric.name}" has been added.` });
@@ -95,8 +101,25 @@ export default function DashboardPage() {
     setMetricToDelete(null);
   };
 
+  const handleTogglePin = (metricId: string) => {
+    let metricName = "";
+    let isNowPinned = false;
+    setMetrics(prevMetrics =>
+      prevMetrics.map(m => {
+        if (m.id === metricId) {
+          metricName = m.name;
+          isNowPinned = !m.isPinned;
+          return { ...m, isPinned: !m.isPinned };
+        }
+        return m;
+      })
+    );
+    if (metricName) {
+      toast({ title: isNowPinned ? "Metric Pinned" : "Metric Unpinned", description: `"${metricName}" has been ${isNowPinned ? 'pinned' : 'unpinned'}.` });
+    }
+  };
+
   if (!isMounted) {
-    // Render a loading state or null until the component is mounted to avoid hydration mismatch with localStorage
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -111,6 +134,12 @@ export default function DashboardPage() {
       </div>
     );
   }
+  
+  const sortedMetrics = [...metrics].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
 
   return (
     <div className="space-y-6">
@@ -123,7 +152,7 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      {metrics.length === 0 ? (
+      {sortedMetrics.length === 0 ? (
         <Card className="text-center p-10 shadow-md">
           <CardHeader>
             <CardTitle className="text-2xl">No metrics yet!</CardTitle>
@@ -139,13 +168,14 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {metrics.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(metric => (
+          {sortedMetrics.map(metric => (
             <MetricCard 
               key={metric.id} 
               metric={metric} 
               onAddDataPoint={openAddDataPointDialog}
               onEditMetric={openEditMetricDialog}
               onDeleteMetric={(id) => setMetricToDelete(id)}
+              onTogglePin={handleTogglePin}
             />
           ))}
         </div>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -30,8 +31,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 
+const defaultMetricColor = "hsl(var(--primary))";
 
 export default function MetricDetailPage() {
   const params = useParams();
@@ -53,13 +55,21 @@ export default function MetricDetailPage() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
+    setIsMounted(true); // Component is mounted
+  }, []);
+
+
+  useEffect(() => {
+    if (!isMounted) return; // Ensure component is mounted before accessing localStorage data
+
     const foundMetric = metrics.find(m => m.id === metricId);
     if (foundMetric) {
       setMetric(foundMetric);
-      const relatedDataPoints = dataPoints.filter(dp => dp.metricId === metricId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const relatedDataPoints = dataPoints
+        .filter(dp => dp.metricId === metricId)
+        .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setMetricDataPoints(relatedDataPoints);
-    } else if (isMounted && metrics.length > 0) { // only redirect if not found after initial load
+    } else if (metrics.length > 0) { // only redirect if not found after initial load and metrics are loaded
       toast({ title: "Metric Not Found", description: "The requested metric could not be found.", variant: "destructive" });
       router.push('/');
     }
@@ -80,7 +90,18 @@ export default function MetricDetailPage() {
   const handleSaveMetric = (metricData: Omit<Metric, "id" | "createdAt">) => {
     if (!metric) return;
     setMetrics(prevMetrics => 
-      prevMetrics.map(m => m.id === metric.id ? { ...m, ...metricData, id: m.id, createdAt: m.createdAt } : m)
+      prevMetrics.map(m => 
+        m.id === metric.id 
+        ? { 
+            ...m, 
+            ...metricData, 
+            id: m.id, 
+            createdAt: m.createdAt,
+            color: metricData.color || m.color || defaultMetricColor, // ensure color persists or defaults
+            isPinned: metricData.isPinned !== undefined ? metricData.isPinned : m.isPinned, // ensure isPinned persists
+          } 
+        : m
+      )
     );
     toast({ title: "Metric Updated", description: `"${metricData.name}" has been updated.` });
   };
@@ -103,12 +124,15 @@ export default function MetricDetailPage() {
     return (
        <div className="space-y-6">
         <div className="animate-pulse bg-muted h-8 w-32 rounded-md mb-4"></div>
-        <div className="animate-pulse bg-card h-12 w-full rounded-md"></div>
+        <div className="animate-pulse bg-card h-20 w-full rounded-md"></div>
         <div className="animate-pulse bg-card h-96 w-full rounded-md mt-6"></div>
         <div className="animate-pulse bg-card h-64 w-full rounded-md mt-6"></div>
       </div>
     );
   }
+  
+  const metricColorStyle = metric.color ? { color: metric.color } : { color: 'hsl(var(--primary))' };
+
 
   return (
     <div className="space-y-8">
@@ -121,8 +145,8 @@ export default function MetricDetailPage() {
         <Card className="shadow-md">
           <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <CardTitle className="text-3xl font-bold text-primary flex items-center">
-                <BarChart3 className="mr-3 h-8 w-8" />
+              <CardTitle className="text-3xl font-bold flex items-center" style={metricColorStyle}>
+                <BarChart3 className="mr-3 h-8 w-8" style={metricColorStyle} />
                 {metric.name}
               </CardTitle>
               <CardDescription>Unit: {metric.unit} | Created: {format(new Date(metric.createdAt), "PPP")}</CardDescription>
@@ -145,7 +169,7 @@ export default function MetricDetailPage() {
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-2xl flex items-center">
-              <ListChecks className="mr-2 h-6 w-6 text-primary" />
+              <ListChecks className="mr-2 h-6 w-6" style={metricColorStyle} />
               Data Log
             </CardTitle>
             <CardDescription>
@@ -175,7 +199,7 @@ export default function MetricDetailPage() {
                     <TableRow key={dp.id}>
                       <TableCell>{format(new Date(dp.timestamp), "PPP p")}</TableCell>
                       <TableCell className="text-right font-medium">{dp.value}</TableCell>
-                      <TableCell className="max-w-xs truncate">{dp.notes || "-"}</TableCell>
+                      <TableCell className="max-w-xs truncate" title={dp.notes}>{dp.notes || "-"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => setDataPointToDelete(dp.id)} className="text-destructive hover:text-destructive/80">
                           <Trash2 className="h-4 w-4" />
