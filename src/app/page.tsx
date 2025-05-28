@@ -10,6 +10,13 @@ import type { Metric, DataPoint } from "@/types";
 import { PlusCircle, LayoutGrid } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
