@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { Metric } from "@/types";
+import type { Tracker } from "@/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,34 +23,34 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-interface MetricCardProps {
-  metric: Metric;
-  onAddDataPoint: (metricId: string) => void;
-  onEditTracker: (metric: Metric) => void;
-  onDeleteTracker: (metricId: string) => void;
-  onTogglePin: (metricId: string) => void;
+interface TrackerCardProps {
+  tracker: Tracker;
+  onAddDataPoint: (trackerId: string) => void;
+  onEditTracker: (tracker: Tracker) => void;
+  onDeleteTracker: (trackerId: string) => void;
+  onTogglePin: (trackerId: string) => void;
 }
 
-export function MetricCard({ metric, onAddDataPoint, onEditTracker, onDeleteTracker, onTogglePin }: MetricCardProps) {
-  const metricColorStyle = metric.color ? { color: metric.color } : {};
+export function TrackerCard({ tracker, onAddDataPoint, onEditTracker, onDeleteTracker, onTogglePin }: TrackerCardProps) {
+  const trackerColorStyle = tracker.color ? { color: tracker.color } : {};
 
   return (
     <Card className={cn( 
         "flex flex-col h-full shadow-md hover:shadow-lg transition-shadow duration-200",
-        metric.isPinned && "border-2 border-primary/70 shadow-primary/20"
+        tracker.isPinned && "border-2 border-primary/70 shadow-primary/20"
       )}>
       <CardHeader>
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-xl font-semibold flex items-center truncate" style={metricColorStyle}>
-              <BarChartHorizontalBig className="mr-2 h-5 w-5 shrink-0" style={metricColorStyle} />
-              <span className="truncate" title={metric.name}>{metric.name}</span>
+            <CardTitle className="text-xl font-semibold flex items-center truncate" style={trackerColorStyle}>
+              <BarChartHorizontalBig className="mr-2 h-5 w-5 shrink-0" style={trackerColorStyle} />
+              <span className="truncate" title={tracker.name}>{tracker.name}</span>
             </CardTitle>
-            <CardDescription>Unit: {metric.unit}</CardDescription>
+            <CardDescription>Unit: {tracker.unit}</CardDescription>
           </div>
           <div className="flex items-center shrink-0">
-            <Button variant="ghost" size="icon" onClick={() => onTogglePin(metric.id)} className="h-8 w-8 mr-1" title={metric.isPinned ? "Unpin Tracker" : "Pin Tracker"}>
-              {metric.isPinned ? <PinOff className="h-4 w-4 text-primary" /> : <Pin className="h-4 w-4" />}
+            <Button variant="ghost" size="icon" onClick={() => onTogglePin(tracker.id)} className="h-8 w-8 mr-1" title={tracker.isPinned ? "Unpin Tracker" : "Pin Tracker"}>
+              {tracker.isPinned ? <PinOff className="h-4 w-4 text-primary" /> : <Pin className="h-4 w-4" />}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -59,18 +59,18 @@ export function MetricCard({ metric, onAddDataPoint, onEditTracker, onDeleteTrac
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEditTracker(metric)}>
+                <DropdownMenuItem onClick={() => onEditTracker(tracker)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Tracker
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onAddDataPoint(metric.id)}>
+                <DropdownMenuItem onClick={() => onAddDataPoint(tracker.id)}>
                   <PlusSquare className="mr-2 h-4 w-4" />
                   Add Data
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onDeleteTracker(metric.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                <DropdownMenuItem onClick={() => onDeleteTracker(tracker.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Metric
+                  Delete Tracker
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -79,7 +79,7 @@ export function MetricCard({ metric, onAddDataPoint, onEditTracker, onDeleteTrac
       </CardHeader>
       <CardContent className="flex-grow">
         <p className="text-sm text-muted-foreground">
-          Created: {format(new Date(metric.createdAt), "PPP")}
+          Created: {format(new Date(tracker.createdAt), "PPP")}
         </p>
         {/* Placeholder for a mini chart or latest value in the future */}
         {/* <div className="mt-4 h-16 bg-muted rounded-md flex items-center justify-center text-sm text-muted-foreground">
@@ -88,9 +88,9 @@ export function MetricCard({ metric, onAddDataPoint, onEditTracker, onDeleteTrac
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row sm:justify-between gap-2 pt-4">
         <Button variant="outline" asChild className="w-full sm:w-auto">
-          <Link href={`/metrics/${metric.id}`}>View Details</Link>
+          <Link href={`/trackers/${tracker.id}`}>View Details</Link>
         </Button>
-        <Button onClick={() => onAddDataPoint(metric.id)} className="w-full sm:w-auto" variant="default">
+        <Button onClick={() => onAddDataPoint(tracker.id)} className="w-full sm:w-auto" variant="default">
           <PlusSquare className="mr-2 h-4 w-4" />
           Add Data
         </Button>

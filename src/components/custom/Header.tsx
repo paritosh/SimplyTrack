@@ -9,7 +9,7 @@ export function AppHeader() {
       <div className="container flex h-16 items-center">
         <Link href="/" className="flex items-center space-x-2">
           <BarChart3 className="h-6 w-6 text-primary" />
-          <span className="font-bold text-xl">Insight Track</span>
+          <span className="font-bold text-xl">Universal Tracker</span>
         </Link>
       </div>
     </header>

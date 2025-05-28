@@ -24,8 +24,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
-import type { DataPoint, Metric } from "@/types";
-import { PlusCircle, Edit3, NotebookPen } from "lucide-react"; // Added Edit3
+import type { DataPoint, Tracker } from "@/types";
+import { PlusCircle, Edit3, NotebookPen } from "lucide-react";
 import React, { useEffect } from "react";
 import { format, parseISO } from 'date-fns';
 
@@ -41,15 +41,14 @@ type DataPointFormValues = z.infer<typeof dataPointFormSchema>;
 interface AddDataPointDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (dataPoint: Omit<DataPoint, "metricId">, id?: string) => void; // Updated onSave signature
-  metric: Metric | null;
-  dataPointToEdit?: DataPoint | null; // Added dataPointToEdit
+  onSave: (dataPoint: Omit<DataPoint, "trackerId">, id?: string) => void;
+  tracker: Tracker | null;
+  dataPointToEdit?: DataPoint | null;
 }
 
-export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointToEdit }: AddDataPointDialogProps) {
+export function AddDataPointDialog({ isOpen, onClose, onSave, tracker, dataPointToEdit }: AddDataPointDialogProps) {
   const form = useForm<DataPointFormValues>({
     resolver: zodResolver(dataPointFormSchema),
-    // Default values will be set by useEffect
   });
 
   useEffect(() => {
@@ -64,7 +63,7 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
         });
       } else {
         form.reset({
-          value: '' as unknown as number, // Ensure it's treated as controlled
+          value: '' as unknown as number, 
           date: new Date(),
           time: format(new Date(), "HH:mm"),
           notes: "",
@@ -74,7 +73,7 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
   }, [isOpen, dataPointToEdit, form]);
 
   const handleSubmit = (values: DataPointFormValues) => {
-    if (!metric) return;
+    if (!tracker) return;
 
     const { value, date: selectedDateValue, time: timeString, notes } = values;
     
@@ -82,8 +81,8 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
     const [hours, minutes] = timeString.split(':').map(Number);
     combinedDateTime.setHours(hours, minutes, 0, 0);
 
-    const dataPointPayload: Omit<DataPoint, "metricId"> = {
-      id: dataPointToEdit ? dataPointToEdit.id : Date.now().toString(), // Use existing id if editing
+    const dataPointPayload: Omit<DataPoint, "trackerId"> = {
+      id: dataPointToEdit ? dataPointToEdit.id : Date.now().toString(),
       value,
       timestamp: combinedDateTime.toISOString(),
       notes,
@@ -93,7 +92,7 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
     onClose();
   };
 
-  if (!metric) return null;
+  if (!tracker) return null;
 
   const isEditing = !!dataPointToEdit;
 
@@ -103,10 +102,10 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
         <DialogHeader>
           <DialogTitle className="flex items-center">
             {isEditing ? <Edit3 className="mr-2 h-5 w-5" /> : <PlusCircle className="mr-2 h-5 w-5" />}
-            {isEditing ? "Edit Data Point" : `Add Data for ${metric.name}`}
+            {isEditing ? "Edit Data Point" : `Add Data for ${tracker.name}`}
           </DialogTitle>
           <DialogDescription>
-            {isEditing ? `Update the details for this data point.` : `Log a new data point for "${metric.name}" (Unit: ${metric.unit}).`}
+            {isEditing ? `Update the details for this data point.` : `Log a new data point for "${tracker.name}" (Unit: ${tracker.unit}).`}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -116,9 +115,9 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric, dataPointT
               name="value"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Value ({metric.unit})</FormLabel>
+                  <FormLabel>Value ({tracker.unit})</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder={`Enter value in ${metric.unit}`} {...field} />
+                    <Input type="number" placeholder={`Enter value in ${tracker.unit}`} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

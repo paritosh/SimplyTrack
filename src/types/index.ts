@@ -1,4 +1,4 @@
-export interface Metric {
+export interface Tracker {
   id: string;
   name: string;
   unit: string; // e.g., "bpm", "%", "$", "kg", "count"
@@ -9,7 +9,7 @@ export interface Metric {
 
 export interface DataPoint {
   id: string;
-  metricId: string;
+  trackerId: string;
   value: number;
   timestamp: string; // ISO date string
   notes?: string;
