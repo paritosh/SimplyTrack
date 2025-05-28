@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,10 +27,12 @@ import { DatePicker } from "@/components/ui/date-picker";
 import type { DataPoint, Metric } from "@/types";
 import { PlusCircle, NotebookPen } from "lucide-react";
 import React, { useEffect } from "react";
+import { format } from 'date-fns';
 
 const dataPointFormSchema = z.object({
   value: z.coerce.number({ invalid_type_error: "Value must be a number." }),
-  timestamp: z.date({ required_error: "Timestamp is required." }),
+  date: z.date({ required_error: "Date is required." }),
+  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Invalid time format. Use HH:mm (e.g., 14:30)." }),
   notes: z.string().optional(),
 });
 
@@ -46,8 +49,9 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
   const form = useForm<DataPointFormValues>({
     resolver: zodResolver(dataPointFormSchema),
     defaultValues: {
-      value: '' as unknown as number, // Initialize with empty string for controlled input
-      timestamp: new Date(),
+      value: '' as unknown as number,
+      date: new Date(),
+      time: format(new Date(), "HH:mm"),
       notes: "",
     },
   });
@@ -55,8 +59,9 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
   useEffect(() => {
     if (isOpen) {
       form.reset({
-        value: '' as unknown as number, // Reset with empty string
-        timestamp: new Date(),
+        value: '' as unknown as number,
+        date: new Date(),
+        time: format(new Date(), "HH:mm"),
         notes: "",
       });
     }
@@ -64,9 +69,17 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
 
   const handleSubmit = (values: DataPointFormValues) => {
     if (!metric) return;
+
+    const { value, date: selectedDateValue, time: timeString, notes } = values;
+    
+    const combinedDateTime = new Date(selectedDateValue);
+    const [hours, minutes] = timeString.split(':').map(Number);
+    combinedDateTime.setHours(hours, minutes, 0, 0); // Set seconds and milliseconds to 0 for consistency
+
     onSave({
-      ...values,
-      timestamp: values.timestamp.toISOString(),
+      value,
+      timestamp: combinedDateTime.toISOString(),
+      notes,
     });
     onClose();
   };
@@ -100,20 +113,35 @@ export function AddDataPointDialog({ isOpen, onClose, onSave, metric }: AddDataP
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="timestamp"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Timestamp</FormLabel>
-                  <DatePicker
-                    date={field.value}
-                    setDate={field.onChange}
-                  />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Date</FormLabel>
+                    <DatePicker
+                      date={field.value}
+                      setDate={field.onChange}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Time</FormLabel>
+                    <FormControl>
+                      <Input type="time" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <FormField
               control={form.control}
               name="notes"
