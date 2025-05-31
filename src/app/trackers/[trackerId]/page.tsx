@@ -4,11 +4,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PlusCircle, Edit3, Trash2, ListChecks, BarChart3, CheckSquare } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Edit3, Trash2, ListChecks, BarChart3, CheckSquare, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddDataPointDialog } from '@/components/custom/AddDataPointDialog';
 import { TrackerChart } from '@/components/custom/TrackerChart';
+import { EventCalendarHeatmap } from '@/components/custom/EventCalendarHeatmap'; // Added
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { Tracker, DataPoint } from '@/types';
 import { useToast } from '@/hooks/use-toast';
@@ -180,8 +181,12 @@ export default function TrackerDetailPage() {
   
   const trackerColorStyle = tracker.color ? { color: tracker.color } : { color: 'hsl(var(--primary))' };
   const currentTrackerType = tracker.type || 'value';
-  const cardTitleIcon = currentTrackerType === 'event' ? <CheckSquare className="mr-3 h-8 w-8" style={trackerColorStyle} /> : <BarChart3 className="mr-3 h-8 w-8" style={trackerColorStyle} />;
-  const dataLogTitleIcon = currentTrackerType === 'event' ? <CheckSquare className="mr-2 h-6 w-6" style={trackerColorStyle} /> : <ListChecks className="mr-2 h-6 w-6" style={trackerColorStyle} />;
+  const cardTitleIcon = currentTrackerType === 'event' 
+    ? <CalendarDays className="mr-3 h-8 w-8" style={trackerColorStyle} /> 
+    : <BarChart3 className="mr-3 h-8 w-8" style={trackerColorStyle} />;
+  const dataLogTitleIcon = currentTrackerType === 'event' 
+    ? <CheckSquare className="mr-2 h-6 w-6" style={trackerColorStyle} /> 
+    : <ListChecks className="mr-2 h-6 w-6" style={trackerColorStyle} />;
   const addDataButtonText = currentTrackerType === 'event' ? "Log Event" : "Add Data Point";
   const valueColumnHeaderText = currentTrackerType === 'event' ? "Status" : `Value (${tracker.unit})`;
 
@@ -217,7 +222,11 @@ export default function TrackerDetailPage() {
         </Card>
       </div>
       
-      <TrackerChart tracker={tracker} data={trackerDataPoints} />
+      {currentTrackerType === 'event' ? (
+        <EventCalendarHeatmap tracker={tracker} data={trackerDataPoints} />
+      ) : (
+        <TrackerChart tracker={tracker} data={trackerDataPoints} />
+      )}
 
       <Card className="shadow-md">
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -251,7 +260,7 @@ export default function TrackerDetailPage() {
                 <TableBody>
                   {trackerDataPoints.map((dp) => (
                     <TableRow key={dp.id}>
-                      <TableCell>{format(new Date(dp.timestamp), "PPP p")}</TableCell>
+                      <TableCell>{format(parseISO(dp.timestamp), "PPP p")}</TableCell>
                       {currentTrackerType === 'event' ? (
                         <TableCell className="text-left"><CheckSquare className="h-5 w-5 text-green-600" /></TableCell>
                       ) : (
@@ -324,3 +333,5 @@ export default function TrackerDetailPage() {
     </div>
   );
 }
+
+    
