@@ -60,7 +60,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
       }
       map.set(dateKey, existing);
     });
-    return map;
+    return eventMap;
   }, [data]);
 
   const currentYear = getYear(displayDate);
@@ -68,12 +68,12 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
 
   const getMonthDataArray = (year: number, month: number): (CalendarDay | null)[] => {
     const firstDayOfMonth = startOfMonth(new Date(year, month));
-    const startingDayOfWeek = getDay(firstDayOfMonth);
+    const startingDayOfWeek = getDay(firstDayOfMonth); // 0 (Sun) to 6 (Sat)
     const daysInMonth = getDaysInMonth(firstDayOfMonth);
     const monthData: (CalendarDay | null)[] = [];
 
     for (let i = 0; i < startingDayOfWeek; i++) {
-      monthData.push(null);
+      monthData.push(null); // Add nulls for days before the first day of the month
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -97,21 +97,21 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
   const switchToYearView = () => setViewMode('year');
   
   const getDayClassAndStyle = (dayObj: CalendarDay | null, inMonthView: boolean = false): { className: string; style: React.CSSProperties } => {
-    const sizeClass = inMonthView ? "h-10 w-10 md:h-12 md:w-12" : "h-5 w-full";
-    const baseClasses = cn(sizeClass, "rounded-sm aspect-square border border-transparent hover:border-primary/50 transition-colors duration-150");
+    const sizeClass = inMonthView ? "h-10 w-10 md:h-12 md:w-12" : "h-5 w-full"; // Adjusted size for year view
+    const baseClasses = cn(sizeClass, "rounded-sm aspect-square border border-transparent hover:border-primary/50 transition-colors duration-150 relative flex items-center justify-center");
 
     if (!dayObj) return { className: cn(baseClasses, 'bg-transparent pointer-events-none'), style: {} };
 
     if (dayObj.hasEvent) {
       if (tracker.color) {
-        // For custom color, we can use it directly. Opacity can vary with count if desired.
-        // Simple approach: full color if event exists.
-        const opacity = Math.min(1, 0.4 + dayObj.count * 0.2).toFixed(2); // Example: more opaque for more events
+        const opacity = Math.min(1, 0.4 + dayObj.count * 0.2).toFixed(2);
         const customColorWithOpacity = tracker.color.startsWith('hsl(var(--') 
           ? `hsla(var(${tracker.color.slice(8,-1)}), ${opacity})` 
           : (tracker.color.startsWith('hsl(') && tracker.color.endsWith(')') 
               ? tracker.color.replace(')', `, ${opacity})`).replace('hsl(', 'hsla(')
-              : tracker.color);
+              : tracker.color); // If it's a direct hex/rgb, opacity might not apply this way.
+                               // Consider if tracker.color can be hex. If so, need a robust way to add alpha.
+                               // For now, assuming HSL from theme or direct HSL strings.
 
         return { className: cn(baseClasses), style: { backgroundColor: customColorWithOpacity } };
       }
@@ -120,12 +120,12 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
       if (dayObj.count >= 3) return { className: cn(baseClasses, 'bg-green-600 dark:bg-green-400'), style: {} };
       if (dayObj.count >= 2) return { className: cn(baseClasses, 'bg-green-500 dark:bg-green-500'), style: {} };
       if (dayObj.count >= 1) return { className: cn(baseClasses, 'bg-green-400 dark:bg-green-600'), style: {} };
-       return { className: cn(baseClasses, 'bg-green-300 dark:bg-green-700'), style: {} };
+       return { className: cn(baseClasses, 'bg-green-300 dark:bg-green-700'), style: {} }; // Fallback if count is weirdly 0 but hasEvent is true
     }
     return { className: cn(baseClasses, 'bg-muted/20 dark:bg-muted/40 hover:bg-muted/30 dark:hover:bg-muted/50'), style: {} };
   };
 
-  if (!isMounted || !tracker) return <p>Loading tracker data...</p>;
+  if (!isMounted || !tracker) return <div className="p-4 text-muted-foreground">Loading tracker data...</div>;
 
   return (
     <TooltipProvider>
@@ -139,7 +139,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
               </CardTitle>
               <CardDescription>
                 {viewMode === 'year' 
-                  ? `Yearly overview of '${tracker.name}' occurrences.` 
+                  ? `Yearly overview of '${tracker.name}' occurrences. Click a month for details.` 
                   : `Monthly overview for ${MONTH_NAMES[currentMonthIndex]}, ${currentYear}.`}
                  Each colored square represents a day the event was logged.
               </CardDescription>
@@ -184,15 +184,16 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
                       variant="ghost" 
                       className="w-full justify-center text-sm font-medium mb-1.5 h-auto py-1 px-2 hover:bg-accent"
                       onClick={() => switchToMonthView(monthIndex)}
+                      aria-label={`View ${monthName} ${currentYear}`}
                     >
                       {monthName} {currentYear}
                     </Button>
                     <div className="grid grid-cols-7 gap-px"> {/* gap-px for thin lines between cells */}
-                      {WEEKDAYS_SHORT.map(day => (
-                        <div key={`${monthIndex}-${day}`} className="text-xs font-medium text-muted-foreground text-center pb-0.5">{day}</div>
+                      {WEEKDAYS_SHORT.map((day, weekdayIndex) => (
+                        <div key={`${monthIndex}-${day}-${weekdayIndex}`} className="text-xs font-medium text-muted-foreground text-center pb-0.5">{day}</div>
                       ))}
                       {monthData.map((dayObj, dayIdx) => {
-                        const { className: dayClassName, style: dayStyle } = getDayClassAndStyle(dayObj);
+                        const { className: dayClassName, style: dayStyle } = getDayClassAndStyle(dayObj, false);
                         return (
                           <Tooltip key={dayIdx} delayDuration={100}>
                             <TooltipTrigger asChild>
@@ -224,7 +225,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
           )}
 
           {viewMode === 'month' && (
-            <div className="max-w-md mx-auto">
+            <div className="max-w-md mx-auto"> {/* Or adjust max-width as needed */}
               <div className="grid grid-cols-7 gap-1 mb-2">
                 {WEEKDAYS_LONG.map(day => (
                   <div key={day} className="text-sm font-medium text-muted-foreground text-center">{day}</div>
@@ -238,7 +239,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
                       <TooltipTrigger asChild>
                          <div className={dayClassName} style={dayStyle}>
                             <span className="sr-only">{dayObj ? format(dayObj.date, 'PPP') : ''}</span>
-                            {dayObj && <span className="absolute top-0.5 left-1 text-[0.6rem] text-white/70 mix-blend-difference">{getDate(dayObj.date)}</span>}
+                            {dayObj && <span className="text-xs text-foreground/70 mix-blend-difference font-medium">{getDate(dayObj.date)}</span>}
                           </div>
                       </TooltipTrigger>
                       {dayObj && (
@@ -265,3 +266,5 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
     </TooltipProvider>
   );
 }
+
+    
