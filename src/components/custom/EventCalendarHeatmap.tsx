@@ -109,10 +109,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
           ? `hsla(var(${tracker.color.slice(8,-1)}), ${opacity})` 
           : (tracker.color.startsWith('hsl(') && tracker.color.endsWith(')') 
               ? tracker.color.replace(')', `, ${opacity})`).replace('hsl(', 'hsla(')
-              : tracker.color); // If it's a direct hex/rgb, opacity might not apply this way.
-                               // Consider if tracker.color can be hex. If so, need a robust way to add alpha.
-                               // For now, assuming HSL from theme or direct HSL strings.
-
+              : tracker.color); 
         return { className: cn(baseClasses), style: { backgroundColor: customColorWithOpacity } };
       }
       // Default green intensity scale if no tracker.color
@@ -239,7 +236,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
                       <TooltipTrigger asChild>
                          <div className={dayClassName} style={dayStyle}>
                             <span className="sr-only">{dayObj ? format(dayObj.date, 'PPP') : ''}</span>
-                            {dayObj && <span className="text-xs text-foreground/70 mix-blend-difference font-medium">{getDate(dayObj.date)}</span>}
+                            {dayObj && <span className="text-xs text-black dark:text-white mix-blend-difference font-medium">{getDate(dayObj.date)}</span>}
                           </div>
                       </TooltipTrigger>
                       {dayObj && (
@@ -266,5 +263,3 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
     </TooltipProvider>
   );
 }
-
-    
