@@ -30,8 +30,8 @@ interface EventCalendarHeatmapProps {
   data: DataPoint[];
 }
 
-const WEEKDAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // For yearly view month header
-const WEEKDAYS_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // For monthly view header
+const WEEKDAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; 
+const WEEKDAYS_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; 
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June', 
@@ -43,7 +43,7 @@ type CalendarDay = { date: Date; hasEvent: boolean; count: number; notes: string
 export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [viewMode, setViewMode] = useState<'year' | 'month'>('year');
-  const [displayDate, setDisplayDate] = useState(new Date()); // Controls current year in year view, or current month in month view
+  const [displayDate, setDisplayDate] = useState(new Date()); 
 
   useEffect(() => {
     setIsMounted(true);
@@ -68,12 +68,12 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
 
   const getMonthDataArray = (year: number, month: number): (CalendarDay | null)[] => {
     const firstDayOfMonth = startOfMonth(new Date(year, month));
-    const startingDayOfWeek = getDay(firstDayOfMonth); // 0 (Sun) to 6 (Sat)
+    const startingDayOfWeek = getDay(firstDayOfMonth); 
     const daysInMonth = getDaysInMonth(firstDayOfMonth);
     const monthData: (CalendarDay | null)[] = [];
 
     for (let i = 0; i < startingDayOfWeek; i++) {
-      monthData.push(null); // Add nulls for days before the first day of the month
+      monthData.push(null); 
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -97,19 +97,16 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
   const switchToYearView = () => setViewMode('year');
   
   const getDayClassAndStyle = (dayObj: CalendarDay | null, inMonthView: boolean = false): { className: string; style: React.CSSProperties } => {
-    const sizeClass = inMonthView ? "h-10 w-10 md:h-12 md:w-12" : "h-5 w-full";
+    const sizeClass = inMonthView ? "h-10 w-10 md:h-12 md:w-12" : "h-auto w-full"; // h-auto for yearly view to respect aspect-square
     const baseClasses = cn(sizeClass, "rounded-sm aspect-square border border-transparent hover:border-primary/50 transition-colors duration-150 relative flex items-center justify-center");
 
     if (!dayObj) return { className: cn(baseClasses, 'bg-transparent pointer-events-none'), style: {} };
 
     if (dayObj.hasEvent) {
-      // Always use green intensity scale for event days in the heatmap
-      // tracker.color is not used for cell background, but can be used for tooltip text or other elements.
       if (dayObj.count >= 5) return { className: cn(baseClasses, 'bg-green-700 dark:bg-green-300'), style: {} };
       if (dayObj.count >= 3) return { className: cn(baseClasses, 'bg-green-600 dark:bg-green-400'), style: {} };
       if (dayObj.count >= 2) return { className: cn(baseClasses, 'bg-green-500 dark:bg-green-500'), style: {} };
       if (dayObj.count >= 1) return { className: cn(baseClasses, 'bg-green-400 dark:bg-green-600'), style: {} };
-      // Fallback for hasEvent but count is 0 (should be rare)
       return { className: cn(baseClasses, 'bg-green-300 dark:bg-green-700'), style: {} }; 
     }
     return { className: cn(baseClasses, 'bg-muted/20 dark:bg-muted/40 hover:bg-muted/30 dark:hover:bg-muted/50'), style: {} };
@@ -121,7 +118,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
     <TooltipProvider>
       <Card className="shadow-lg">
         <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex-1">
               <CardTitle>
                 {tracker.name}: Event Heatmap 
@@ -146,11 +143,11 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
               </div>
             )}
             {viewMode === 'month' && (
-              <div className="flex flex-col sm:flex-row items-center gap-2">
-                 <Button variant="outline" onClick={switchToYearView} className="w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                 <Button variant="outline" onClick={switchToYearView} className="w-full sm:w-auto order-2 sm:order-1">
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back to Year View
                 </Button>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 order-1 sm:order-2">
                   <Button variant="outline" size="icon" onClick={handlePrevMonth} aria-label="Previous month">
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
@@ -165,7 +162,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
         </CardHeader>
         <CardContent className="pt-6">
           {viewMode === 'year' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-3 sm:gap-x-4 md:gap-x-6 gap-y-4 sm:gap-y-6 md:gap-y-8">
               {MONTH_NAMES.map((monthName, monthIndex) => {
                 const monthData = getMonthDataArray(currentYear, monthIndex);
                 return (
@@ -178,7 +175,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
                     >
                       {monthName} {currentYear}
                     </Button>
-                    <div className="grid grid-cols-7 gap-px"> {/* gap-px for thin lines between cells */}
+                    <div className="grid grid-cols-7 gap-px">
                       {WEEKDAYS_SHORT.map((day, weekdayIndex) => (
                         <div key={`${monthIndex}-${day}-${weekdayIndex}`} className="text-xs font-medium text-muted-foreground text-center pb-0.5">{day}</div>
                       ))}
@@ -215,7 +212,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
           )}
 
           {viewMode === 'month' && (
-            <div className="max-w-md mx-auto"> {/* Or adjust max-width as needed */}
+            <div className="max-w-md mx-auto"> 
               <div className="grid grid-cols-7 gap-1 mb-2">
                 {WEEKDAYS_LONG.map(day => (
                   <div key={day} className="text-sm font-medium text-muted-foreground text-center">{day}</div>
