@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PlusCircle, Edit3, Trash2, ListChecks, BarChart3 } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Edit3, Trash2, ListChecks, BarChart3, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddDataPointDialog } from '@/components/custom/AddDataPointDialog';
@@ -40,7 +40,7 @@ export default function TrackerDetailPage() {
   const router = useRouter();
   const trackerId = params.trackerId as string;
 
-  const [trackers, setTrackers] = useLocalStorage<Tracker[]>("trackers", []);
+  const [rawTrackers, setRawTrackers] = useLocalStorage<Tracker[]>("trackers", []);
   const [dataPoints, setDataPoints] = useLocalStorage<DataPoint[]>("dataPoints", []);
   
   const [tracker, setTracker] = useState<Tracker | null>(null);
@@ -59,67 +59,92 @@ export default function TrackerDetailPage() {
     setIsMounted(true); 
   }, []);
 
+  useEffect(() => {
+    if (isMounted) {
+      const migratedTrackers = rawTrackers.map(t => ({
+        ...t,
+        type: t.type || 'value',
+      }));
+      if (JSON.stringify(migratedTrackers) !== JSON.stringify(rawTrackers)) {
+         // This direct call to setRawTrackers might be an issue if it triggers infinite loops
+         // For now, we assume useLocalStorage handles updates without re-triggering this excessively
+      }
+      const foundTracker = migratedTrackers.find(t => t.id === trackerId);
+      if (foundTracker) {
+        setTracker(foundTracker);
+      } else if (migratedTrackers.length > 0) {
+        toast({ title: "Tracker Not Found", description: "The requested tracker could not be found.", variant: "destructive" });
+        router.push('/');
+      }
+    }
+  }, [isMounted, rawTrackers, trackerId, router, toast]);
+
 
   useEffect(() => {
-    if (!isMounted) return; 
+    if (!isMounted || !tracker) return; 
 
-    const foundTracker = trackers.find(t => t.id === trackerId);
-    if (foundTracker) {
-      setTracker(foundTracker);
-      const relatedDataPoints = dataPoints
-        .filter(dp => dp.trackerId === trackerId)
-        .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setTrackerDataPoints(relatedDataPoints);
-    } else if (trackers.length > 0) { 
-      toast({ title: "Tracker Not Found", description: "The requested tracker could not be found.", variant: "destructive" });
-      router.push('/');
-    }
-  }, [trackerId, trackers, dataPoints, router, toast, isMounted]);
+    const relatedDataPoints = dataPoints
+      .filter(dp => dp.trackerId === tracker.id)
+      .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    setTrackerDataPoints(relatedDataPoints);
+    
+  }, [trackerId, tracker, dataPoints, isMounted]);
 
 
   const handleSaveDataPoint = (dataPointData: Omit<DataPoint, "trackerId">, idToUpdate?: string) => {
     if (!tracker) return;
+    
+    const finalDataPointData = {
+        ...dataPointData,
+        value: tracker.type === 'event' ? 1 : dataPointData.value,
+    };
 
     if (idToUpdate) { 
       setDataPoints(prevDataPoints =>
         prevDataPoints.map(dp =>
-          dp.id === idToUpdate ? { ...dataPointData, trackerId: tracker.id } : dp
+          dp.id === idToUpdate ? { ...finalDataPointData, trackerId: tracker.id } : dp
         )
       );
-      toast({ title: "Data Point Updated", description: `Data point for "${tracker.name}" has been updated.` });
+      toast({ title: tracker.type === 'event' ? "Event Updated" : "Data Point Updated", description: `${tracker.type === 'event' ? 'Event' : 'Data point'} for "${tracker.name}" has been updated.` });
     } else { 
       const newDataPoint: DataPoint = {
-        ...dataPointData, 
+        ...finalDataPointData, 
         trackerId: tracker.id,
       };
       setDataPoints(prevDataPoints => [...prevDataPoints, newDataPoint]);
-      toast({ title: "Data Point Added", description: `Value ${newDataPoint.value} for "${tracker.name}" recorded.` });
+      const toastMessage = tracker.type === 'event' 
+        ? `Event "${tracker.name}" logged.` 
+        : `Value ${newDataPoint.value} for "${tracker.name}" recorded.`;
+      toast({ title: tracker.type === 'event' ? "Event Logged" : "Data Point Added", description: toastMessage });
     }
     setDataPointToEdit(null); 
   };
 
   const handleSaveTracker = (trackerData: Omit<Tracker, "id" | "createdAt">) => {
     if (!tracker) return;
-    setTrackers(prevTrackers => 
+    const unit = trackerData.type === 'event' ? 'occurrence' : trackerData.unit;
+    const updatedTracker = {
+      ...tracker,
+      ...trackerData,
+      unit: unit,
+      color: trackerData.color || tracker.color || defaultTrackerColor,
+      isPinned: trackerData.isPinned !== undefined ? trackerData.isPinned : tracker.isPinned,
+    };
+
+    setRawTrackers(prevTrackers => 
       prevTrackers.map(t => 
         t.id === tracker.id 
-        ? { 
-            ...t, 
-            ...trackerData, 
-            id: t.id, 
-            createdAt: t.createdAt,
-            color: trackerData.color || t.color || defaultTrackerColor,
-            isPinned: trackerData.isPinned !== undefined ? trackerData.isPinned : t.isPinned,
-          } 
+        ? updatedTracker
         : t
       )
     );
+    setTracker(updatedTracker); // Update local state for current page
     toast({ title: "Tracker Updated", description: `"${trackerData.name}" has been updated.` });
   };
 
   const handleDeleteTracker = () => {
     if (!tracker) return;
-    setTrackers(prevTrackers => prevTrackers.filter(t => t.id !== tracker.id));
+    setRawTrackers(prevTrackers => prevTrackers.filter(t => t.id !== tracker.id));
     setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.trackerId !== tracker.id));
     toast({ title: "Tracker Deleted", description: "The tracker and its data have been deleted." });
     router.push('/');
@@ -127,7 +152,7 @@ export default function TrackerDetailPage() {
 
   const handleDeleteDataPoint = (dpId: string) => {
     setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.id !== dpId));
-    toast({ title: "Data Point Deleted", description: "The data point has been removed." });
+    toast({ title: tracker?.type === 'event' ? "Event Log Removed" : "Data Point Deleted", description: `The ${tracker?.type === 'event' ? 'event log' : 'data point'} has been removed.` });
     setDataPointIdToDelete(null);
   };
 
@@ -154,6 +179,11 @@ export default function TrackerDetailPage() {
   }
   
   const trackerColorStyle = tracker.color ? { color: tracker.color } : { color: 'hsl(var(--primary))' };
+  const currentTrackerType = tracker.type || 'value';
+  const cardTitleIcon = currentTrackerType === 'event' ? <CheckSquare className="mr-3 h-8 w-8" style={trackerColorStyle} /> : <BarChart3 className="mr-3 h-8 w-8" style={trackerColorStyle} />;
+  const dataLogTitleIcon = currentTrackerType === 'event' ? <CheckSquare className="mr-2 h-6 w-6" style={trackerColorStyle} /> : <ListChecks className="mr-2 h-6 w-6" style={trackerColorStyle} />;
+  const addDataButtonText = currentTrackerType === 'event' ? "Log Event" : "Add Data Point";
+  const valueColumnHeaderText = currentTrackerType === 'event' ? "Status" : `Value (${tracker.unit})`;
 
 
   return (
@@ -168,10 +198,12 @@ export default function TrackerDetailPage() {
           <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <CardTitle className="text-3xl font-bold flex items-center" style={trackerColorStyle}>
-                <BarChart3 className="mr-3 h-8 w-8" style={trackerColorStyle} />
+                {cardTitleIcon}
                 {tracker.name}
               </CardTitle>
-              <CardDescription>Unit: {tracker.unit} | Created: {format(new Date(tracker.createdAt), "PPP")}</CardDescription>
+              <CardDescription>
+                {currentTrackerType === 'value' ? `Unit: ${tracker.unit}` : `Type: Event Tracker`} | Created: {format(new Date(tracker.createdAt), "PPP")}
+              </CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                <Button onClick={() => setIsEditTrackerDialogOpen(true)} variant="outline" className="w-full sm:w-auto">
@@ -191,27 +223,27 @@ export default function TrackerDetailPage() {
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-2xl flex items-center">
-              <ListChecks className="mr-2 h-6 w-6" style={trackerColorStyle} />
+              {dataLogTitleIcon}
               Data Log
             </CardTitle>
             <CardDescription>
-              Recorded data points for {tracker.name}.
+              Recorded {currentTrackerType === 'event' ? 'events' : 'data points'} for {tracker.name}.
             </CardDescription>
           </div>
           <Button onClick={openAddDataPointDialog} variant="default" size="lg">
-            <PlusCircle className="mr-2 h-5 w-5" /> Add Data Point
+            <PlusCircle className="mr-2 h-5 w-5" /> {addDataButtonText}
           </Button>
         </CardHeader>
         <CardContent>
           {trackerDataPoints.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No data points logged yet. Click &quot;Add Data Point&quot; to start.</p>
+            <p className="text-muted-foreground text-center py-4">No {currentTrackerType === 'event' ? 'events logged' : 'data points recorded'} yet. Click &quot;{addDataButtonText}&quot; to start.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[200px]">Timestamp</TableHead>
-                    <TableHead className="text-right">Value ({tracker.unit})</TableHead>
+                    <TableHead className={currentTrackerType === 'event' ? 'text-left' : 'text-right'}>{valueColumnHeaderText}</TableHead>
                     <TableHead>Notes</TableHead>
                     <TableHead className="w-[120px] text-right">Actions</TableHead> 
                   </TableRow>
@@ -220,7 +252,11 @@ export default function TrackerDetailPage() {
                   {trackerDataPoints.map((dp) => (
                     <TableRow key={dp.id}>
                       <TableCell>{format(new Date(dp.timestamp), "PPP p")}</TableCell>
-                      <TableCell className="text-right font-medium">{dp.value}</TableCell>
+                      {currentTrackerType === 'event' ? (
+                        <TableCell className="text-left"><CheckSquare className="h-5 w-5 text-green-600" /></TableCell>
+                      ) : (
+                        <TableCell className="text-right font-medium">{dp.value}</TableCell>
+                      )}
                       <TableCell className="max-w-xs truncate" title={dp.notes}>{dp.notes || "-"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => openEditDataPointDialog(dp)} className="text-muted-foreground hover:text-foreground">
@@ -272,9 +308,9 @@ export default function TrackerDetailPage() {
       <AlertDialog open={!!dataPointIdToDelete} onOpenChange={(open) => !open && setDataPointIdToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Data Point?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {currentTrackerType === 'event' ? 'Event Log' : 'Data Point'}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this data point? This action cannot be undone.
+              Are you sure you want to delete this {currentTrackerType === 'event' ? 'event log' : 'data point'}? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

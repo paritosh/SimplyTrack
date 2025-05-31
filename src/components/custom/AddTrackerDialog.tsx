@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -32,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Tracker } from "@/types";
-import { PlusCircle, Edit3, Palette, Pin } from "lucide-react";
+import { PlusCircle, Edit3, Palette, Pin, Activity, TrendingUp } from "lucide-react";
 import React from "react";
 
 const availableColors = [
@@ -43,16 +42,25 @@ const availableColors = [
   { label: "Chart 3 (Teal)", value: "hsl(var(--chart-3))" },
   { label: "Chart 4 (Orange)", value: "hsl(var(--chart-4))" },
   { label: "Chart 5 (Salmon)", value: "hsl(var(--chart-5))" },
-  { label: "Green", value: "hsl(145, 63%, 49%)" }, // A distinct green
-  { label: "Yellow", value: "hsl(45, 100%, 51%)" }, // A distinct yellow
-  { label: "Red", value: "hsl(0, 84%, 60%)" }, // A distinct red for emphasis
+  { label: "Green", value: "hsl(145, 63%, 49%)" },
+  { label: "Yellow", value: "hsl(45, 100%, 51%)" },
+  { label: "Red", value: "hsl(0, 84%, 60%)" },
 ];
 
 const trackerFormSchema = z.object({
   name: z.string().min(1, "Tracker name is required."),
-  unit: z.string().min(1, "Unit is required (e.g., kg, %, count)."),
+  type: z.enum(['value', 'event']).default('value'),
+  unit: z.string().optional(),
   color: z.string().optional(),
   isPinned: z.boolean().optional(),
+}).refine(data => {
+  if (data.type === 'value' && (!data.unit || data.unit.trim() === "")) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Unit is required for value-based trackers.",
+  path: ["unit"],
 });
 
 type TrackerFormValues = z.infer<typeof trackerFormSchema>;
@@ -67,45 +75,48 @@ interface AddTrackerDialogProps {
 export function AddTrackerDialog({ isOpen, onClose, onSave, trackerToEdit }: AddTrackerDialogProps) {
   const form = useForm<TrackerFormValues>({
     resolver: zodResolver(trackerFormSchema),
-    defaultValues: trackerToEdit 
-      ? { 
-          name: trackerToEdit.name, 
-          unit: trackerToEdit.unit,
-          color: trackerToEdit.color || availableColors[0].value,
-          isPinned: !!trackerToEdit.isPinned,
-        } 
-      : { 
-          name: "", 
-          unit: "",
-          color: availableColors[0].value,
-          isPinned: false,
-        },
+    defaultValues: {
+      name: "",
+      type: 'value',
+      unit: "",
+      color: availableColors[0].value,
+      isPinned: false,
+    },
   });
+
+  const trackerType = form.watch("type");
 
   React.useEffect(() => {
     if (isOpen) {
-      form.reset(
-        trackerToEdit
-        ? { 
-            name: trackerToEdit.name, 
-            unit: trackerToEdit.unit,
-            color: trackerToEdit.color || availableColors[0].value,
-            isPinned: !!trackerToEdit.isPinned,
-          }
-        : { 
-            name: "", 
-            unit: "",
-            color: availableColors[0].value,
-            isPinned: false,
-          }
-      );
+      if (trackerToEdit) {
+        form.reset({
+          name: trackerToEdit.name,
+          type: trackerToEdit.type || 'value',
+          unit: trackerToEdit.unit || "",
+          color: trackerToEdit.color || availableColors[0].value,
+          isPinned: !!trackerToEdit.isPinned,
+        });
+      } else {
+        form.reset({
+          name: "",
+          type: 'value',
+          unit: "",
+          color: availableColors[0].value,
+          isPinned: false,
+        });
+      }
     }
   }, [isOpen, trackerToEdit, form]);
 
   const handleSubmit = (values: TrackerFormValues) => {
+    let unitToSave = values.unit;
+    if (values.type === 'event') {
+      unitToSave = 'occurrence'; // Default unit for event trackers
+    }
     onSave({
       name: values.name,
-      unit: values.unit,
+      type: values.type,
+      unit: unitToSave!,
       color: values.color,
       isPinned: values.isPinned,
     }, trackerToEdit?.id);
@@ -121,7 +132,7 @@ export function AddTrackerDialog({ isOpen, onClose, onSave, trackerToEdit }: Add
             {trackerToEdit ? "Edit Tracker" : "Add New Tracker"}
           </DialogTitle>
           <DialogDescription>
-            {trackerToEdit ? "Update the details of your tracker." : "Define a new tracker you want to track."}
+            {trackerToEdit ? "Update the details of your tracker." : "Define a new tracker or event you want to track."}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -133,7 +144,7 @@ export function AddTrackerDialog({ isOpen, onClose, onSave, trackerToEdit }: Add
                 <FormItem>
                   <FormLabel>Tracker Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Daily Water Intake, Portfolio Value" {...field} />
+                    <Input placeholder="e.g., Daily Water Intake, Morning Exercise" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -141,17 +152,48 @@ export function AddTrackerDialog({ isOpen, onClose, onSave, trackerToEdit }: Add
             />
             <FormField
               control={form.control}
-              name="unit"
+              name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Unit</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., ml, USD, reps, hours" {...field} />
-                  </FormControl>
+                  <FormLabel className="flex items-center"><Activity className="mr-2 h-4 w-4 text-muted-foreground" /> Tracker Type</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tracker type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="value">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4" /> Value-based (e.g., weight, mood score)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="event">
+                        <div className="flex items-center gap-2">
+                          <Pin className="h-4 w-4" /> Event-based (e.g., exercised, meditated)
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            {trackerType === 'value' && (
+              <FormField
+                control={form.control}
+                name="unit"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Unit</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., ml, USD, reps, hours" {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <FormField
               control={form.control}
               name="color"
@@ -187,7 +229,7 @@ export function AddTrackerDialog({ isOpen, onClose, onSave, trackerToEdit }: Add
                   <div className="space-y-0.5">
                     <FormLabel className="flex items-center"><Pin className="mr-2 h-4 w-4 text-muted-foreground"/> Pin to Dashboard</FormLabel>
                     <DialogDescription className="text-xs">
-                      Pinned trackers appear at the top of your dashboard.
+                      Pinned items appear at the top of your dashboard.
                     </DialogDescription>
                   </div>
                   <FormControl>
