@@ -60,7 +60,7 @@ export function EventCalendarHeatmap({ tracker, data }: EventCalendarHeatmapProp
       }
       map.set(dateKey, existing);
     });
-    return eventMap;
+    return map;
   }, [data]);
 
   const currentYear = getYear(displayDate);
