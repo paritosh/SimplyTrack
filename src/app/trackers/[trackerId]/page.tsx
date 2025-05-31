@@ -13,7 +13,7 @@ import { EventCalendarHeatmap } from '@/components/custom/EventCalendarHeatmap';
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { Tracker, DataPoint } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import {
   Table,
   TableBody,
