@@ -57,6 +57,15 @@ interface AggregationGroup {
   dateLabel: string;
 }
 
+const EVENT_HEATMAP_COLORS = [
+  'hsl(120, 60%, 90%)', // very light green (for low counts)
+  'hsl(120, 55%, 75%)', // light green
+  'hsl(120, 50%, 60%)', // medium green
+  'hsl(120, 65%, 45%)', // dark green
+  'hsl(120, 70%, 30%)', // very dark green (for high counts)
+];
+
+
 export function TrackerChart({ tracker, data }: TrackerChartProps) {
   const trackerType = tracker.type || 'value';
   const [intervalType, setIntervalType] = useState<IntervalType>('raw');
@@ -69,14 +78,14 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
 
   useEffect(() => {
     if (trackerType === 'event') {
-      setOperationType('count');
-    } else {
+      setOperationType('count'); // Event trackers primarily use 'count' for aggregation
+    } else { // Value trackers
       if (intervalType === 'raw') {
-        // For raw value data, no specific operation is 'applied' by default, it just shows values
+        // No specific operation is 'applied' by default, it just shows values
       } else if (intervalType === 'daily') {
-        setOperationType('sum');
-      } else { 
-        setOperationType('average');
+        setOperationType('sum'); // Default to sum for daily values
+      } else { // monthly, yearly values
+        setOperationType('average'); // Default to average for monthly/yearly values
       }
     }
   }, [trackerType, intervalType]);
@@ -86,8 +95,8 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     setIntervalType(value);
   };
 
-  const processedChartData = useMemo((): ProcessedDataPoint[] => {
-    if (!data || data.length === 0) return [];
+  const { processedChartData, maxEventCount } = useMemo(() => {
+    if (!data || data.length === 0) return { processedChartData: [], maxEventCount: 0 };
 
     const sortedData = data
       .map(dp => ({
@@ -97,13 +106,16 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
       .sort((a, b) => a.timestampDate.getTime() - b.timestampDate.getTime());
 
     if (intervalType === 'raw') {
-      return sortedData.map(dp => ({
-        timestamp: dp.timestampDate.getTime(),
-        value: trackerType === 'event' ? 1 : dp.value, 
-        notes: dp.notes,
-        originalDataPointCount: 1,
-        dateLabel: format(dp.timestampDate, "MMM d, yy p"),
-      }));
+      return { 
+        processedChartData: sortedData.map(dp => ({
+          timestamp: dp.timestampDate.getTime(),
+          value: trackerType === 'event' ? 1 : dp.value, 
+          notes: dp.notes,
+          originalDataPointCount: 1,
+          dateLabel: format(dp.timestampDate, "MMM d, yy p"),
+        })),
+        maxEventCount: trackerType === 'event' ? 1 : 0 // For raw events, max count per point is 1
+      };
     }
 
     const aggregationMap: Record<string, AggregationGroup> = {};
@@ -139,18 +151,19 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
       if (dp.notes) aggregationMap[key].notesArr.push(dp.notes);
     });
 
-    return Object.values(aggregationMap).map(group => {
+    let currentMaxEventCount = 0;
+    const finalProcessedData = Object.values(aggregationMap).map(group => {
       let aggregatedValue: number;
       const count = group.values.length;
       if (count === 0) return null; 
 
-      let currentOperation = operationType;
+      let currentOperationForGroup = operationType;
       if (trackerType === 'event' && intervalType !== 'raw') {
-        currentOperation = 'count'; 
+        currentOperationForGroup = 'count'; 
       }
 
 
-      switch (currentOperation) {
+      switch (currentOperationForGroup) {
         case 'sum':
           aggregatedValue = group.values.reduce((acc, val) => acc + val, 0);
           break;
@@ -166,8 +179,14 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
         case 'max':
           aggregatedValue = Math.max(...group.values);
           break;
-        default:
+        default: // Should not happen with current setup
           aggregatedValue = trackerType === 'event' ? count : group.values.reduce((acc, val) => acc + val, 0); 
+      }
+      
+      if (trackerType === 'event' && intervalType !== 'raw') {
+        if (aggregatedValue > currentMaxEventCount) {
+          currentMaxEventCount = aggregatedValue;
+        }
       }
       
       const uniqueNotes = [...new Set(group.notesArr)];
@@ -183,6 +202,9 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
         dateLabel: group.dateLabel,
       };
     }).filter(Boolean) as ProcessedDataPoint[];
+
+    return { processedChartData: finalProcessedData, maxEventCount: currentMaxEventCount };
+
   }, [data, intervalType, operationType, trackerType, tracker.unit]);
 
   if (!isClient) {
@@ -217,11 +239,12 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     if (trackerType === 'event') {
       return intervalType === 'raw' ? "Event Logged" : "Count of Events";
     }
+    // For value trackers
     if (intervalType === 'raw') {
       return tracker.unit || "Value";
     }
     const opLabel = operationType.charAt(0).toUpperCase() + operationType.slice(1);
-    if (operationType === 'count') {
+    if (operationType === 'count') { // This case is mostly for value trackers if user selects 'count'
       return `${opLabel} of Entries`;
     }
     return `${opLabel} ${tracker.unit}`;
@@ -258,8 +281,10 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
   };
   
   const isRawEventChart = trackerType === 'event' && intervalType === 'raw';
-  const ChartComponent = isRawEventChart ? ScatterChart : (trackerType === 'event' && intervalType !== 'raw' ? BarChart : LineChart);
-  const ChartSeriesComponent = isRawEventChart ? Scatter : (trackerType === 'event' && intervalType !== 'raw' ? Bar : Line);
+  const isAggregatedEventChart = trackerType === 'event' && intervalType !== 'raw';
+  
+  const ChartComponent = isRawEventChart ? ScatterChart : (isAggregatedEventChart ? BarChart : LineChart);
+  const ChartSeriesComponent = isRawEventChart ? Scatter : (isAggregatedEventChart ? Bar : Line);
 
   let yAxisProps: any = {
     stroke: "hsl(var(--muted-foreground))",
@@ -270,7 +295,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
       value: yAxisLabelValue, 
       angle: -90, 
       position: 'insideLeft', 
-      offset: -5,
+      offset: isAggregatedEventChart ? 10 : -5, // More offset for BarChart label
       style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))', fontSize: '0.875rem' }
     } : undefined,
   };
@@ -279,7 +304,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     yAxisProps = {
       ...yAxisProps,
       type: "number",
-      domain: [0, 2], // Simple domain for scatter points
+      domain: [0, 2], // Simple domain for scatter points (0 to 2, point at 1)
       ticks: [1], // Only show tick at 1
       tickFormatter: () => '', // Hide Y-axis tick labels
       axisLine: false, // Hide Y-axis line
@@ -287,6 +312,9 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
       label: undefined, // No Y-axis label for raw event scatter
       width: 10 // Minimal width for hidden Y axis
     };
+  } else if (isAggregatedEventChart) {
+    yAxisProps.domain = [0, 'dataMax + 1']; // Ensure bar chart starts at 0 and has some padding
+    yAxisProps.allowDecimals = false;
   }
 
 
@@ -314,13 +342,15 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
               </SelectContent>
             </Select>
           </div>
-          {trackerType === 'value' && intervalType !== 'raw' && (
+          {/* Operation dropdown is hidden for event trackers when aggregated, as it defaults to 'count' */}
+          {/* It's shown for value trackers or raw event data (though 'operation' isn't used for raw event data) */}
+          {(!isAggregatedEventChart || trackerType === 'value') && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={`${chartId}-operation-select`} className="text-xs text-muted-foreground">Operation</Label>
               <Select 
                 value={operationType} 
                 onValueChange={(value: OperationType) => setOperationType(value)} 
-                disabled={intervalType === 'raw' || trackerType === 'event'}
+                disabled={intervalType === 'raw' && trackerType === 'value' ? false : (isAggregatedEventChart || intervalType === 'raw')}
               >
                 <SelectTrigger id={`${chartId}-operation-select`} className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Select operation" />
@@ -347,7 +377,9 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
           <ResponsiveContainer>
             <ChartComponent
               data={processedChartData}
-              margin={{ top: 5, right: 30, left: isRawEventChart ? -25 : 5, bottom: 20 }} // Adjust left margin for hidden Y axis
+              margin={{ top: 5, right: 30, left: isRawEventChart ? -25 : (isAggregatedEventChart ? 20 : 5), bottom: 20 }}
+              barGap={isAggregatedEventChart ? 2 : undefined}
+              barCategoryGap={isAggregatedEventChart ? '10%' : undefined}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
@@ -357,7 +389,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                 tickFormatter={getXAxisTickFormatter()}
                 stroke="hsl(var(--muted-foreground))"
                 tickMargin={10}
-                interval={processedChartData.length > 30 && intervalType === 'raw' ? 'preserveStartEnd' : undefined}
+                interval={processedChartData.length > 30 && intervalType === 'raw' ? 'preserveStartEnd' : (isAggregatedEventChart && processedChartData.length > 20 ? 'equidistantPreserveStart' : undefined) }
                 minTickGap={intervalType === 'raw' ? 80 : (intervalType === 'daily' ? 40 : 20)}
               />
               <YAxis {...yAxisProps} />
@@ -372,13 +404,12 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
 
                     if (trackerType === 'event') {
                       if (intervalType === 'raw') {
-                        formattedValue = "Logged"; // For scatter plot, value is 1
-                        // displayUnit is already set to empty string
-                      } else { // Aggregated event data (count)
+                        formattedValue = "Logged"; 
+                      } else { 
                         formattedValue = Number(value).toLocaleString();
                         displayUnit = value === 1 ? 'event' : 'events';
                       }
-                    } else { // Value-based tracker
+                    } else { 
                       if (intervalType !== 'raw' && operationType === 'count') {
                         formattedValue = Number(value).toLocaleString();
                         displayUnit = value === 1 ? 'entry' : 'entries';
@@ -405,7 +436,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                                   (Based on {dataPoint.originalDataPointCount} data point{dataPoint.originalDataPointCount !== 1 ? 's' : ''})
                               </span>
                           )}
-                          {dataPoint.notes && ( // Show notes for both raw and aggregated if available
+                          {dataPoint.notes && ( 
                              <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
                                {intervalType === 'raw' ? "Note: " : "Notes summary: "}{dataPoint.notes}
                              </span>
@@ -423,33 +454,40 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                 <ChartSeriesComponent
                   dataKey="value" 
                   name={chartConfig.value.label}
-                  fill="var(--color-value)"
+                  fill={chartConfig.value.color} // Use tracker's color for scatter points
                   shape="square"
-                  size={100} // Adjust size of the square, this might need tweaking based on data density
+                  size={100} 
                 />
-              ) : ChartSeriesComponent === Bar ? (
+              ) : ChartSeriesComponent === Bar ? ( // Aggregated Event Chart (Bar)
                  <ChartSeriesComponent
                     dataKey="value"
                     name={chartConfig.value.label}
-                    fill="var(--color-value)"
-                    barSize={intervalType === 'daily' ? 20 : undefined} // Adjust bar size for daily view
+                    fill={(entry: ProcessedDataPoint) => { // Custom fill for heatmap effect
+                      if (maxEventCount === 0) return EVENT_HEATMAP_COLORS[0];
+                      const intensityRatio = entry.value / maxEventCount;
+                      const colorIndex = Math.min(
+                        EVENT_HEATMAP_COLORS.length - 1,
+                        Math.floor(intensityRatio * EVENT_HEATMAP_COLORS.length)
+                      );
+                      return EVENT_HEATMAP_COLORS[Math.max(0, colorIndex)]; // Ensure index is not negative
+                    }}
                  />
-              ) : ( // Line chart
+              ) : ( // Value Tracker Line chart
                 <ChartSeriesComponent
                   type="monotone"
                   dataKey="value" 
                   name={chartConfig.value.label}
-                  stroke="var(--color-value)"
+                  stroke={chartConfig.value.color}
                   strokeWidth={2}
                   dot={{
                     r: processedChartData.length < 50 || intervalType !== 'raw' ? 4 : 2,
-                    fill: "var(--color-value)",
+                    fill: chartConfig.value.color,
                     strokeWidth: 2,
                     stroke: "hsl(var(--background))"
                   }}
                   activeDot={{
                     r: 6,
-                    fill: "var(--color-value)",
+                    fill: chartConfig.value.color,
                     strokeWidth: 2,
                     stroke: "hsl(var(--background))"
                   }}
