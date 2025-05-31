@@ -7,12 +7,15 @@ import {
   LineChart,
   Bar,
   BarChart,
+  Scatter,
+  ScatterChart,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  Label as RechartsLabel, // Alias to avoid conflict with ShadCN Label
 } from "recharts";
 import {
   ChartContainer,
@@ -29,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from '@/components/ui/label';
+import { Label } from '@/components/ui/label'; // ShadCN Label
 
 interface TrackerChartProps {
   tracker: Tracker;
@@ -65,15 +68,14 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
   }, []);
 
   useEffect(() => {
-    // When tracker type changes or interval changes, adjust operation type
     if (trackerType === 'event') {
       setOperationType('count');
     } else {
       if (intervalType === 'raw') {
-        // No specific operation for raw, but keep 'sum' as a placeholder if needed
+        // For raw value data, no specific operation is 'applied' by default, it just shows values
       } else if (intervalType === 'daily') {
         setOperationType('sum');
-      } else { // monthly, yearly for value trackers
+      } else { 
         setOperationType('average');
       }
     }
@@ -82,7 +84,6 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
 
   const handleIntervalChange = (value: IntervalType) => {
     setIntervalType(value);
-    // Default operation is set in the useEffect above based on trackerType and new interval
   };
 
   const processedChartData = useMemo((): ProcessedDataPoint[] => {
@@ -91,14 +92,14 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     const sortedData = data
       .map(dp => ({
         ...dp,
-        timestampDate: parseISO(dp.timestamp), // Ensure correct date parsing
+        timestampDate: parseISO(dp.timestamp),
       }))
       .sort((a, b) => a.timestampDate.getTime() - b.timestampDate.getTime());
 
     if (intervalType === 'raw') {
       return sortedData.map(dp => ({
         timestamp: dp.timestampDate.getTime(),
-        value: trackerType === 'event' ? 1 : dp.value, // Event occurrences are 1
+        value: trackerType === 'event' ? 1 : dp.value, 
         notes: dp.notes,
         originalDataPointCount: 1,
         dateLabel: format(dp.timestampDate, "MMM d, yy p"),
@@ -141,11 +142,11 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     return Object.values(aggregationMap).map(group => {
       let aggregatedValue: number;
       const count = group.values.length;
-      if (count === 0) return null; // Should not happen if map is built correctly
+      if (count === 0) return null; 
 
       let currentOperation = operationType;
       if (trackerType === 'event' && intervalType !== 'raw') {
-        currentOperation = 'count'; // Force count for event aggregation
+        currentOperation = 'count'; 
       }
 
 
@@ -211,25 +212,22 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
       </Card>
     );
   }
-
-  const getOperationLabel = (op: OperationType) => op.charAt(0).toUpperCase() + op.slice(1);
   
   const getChartDisplayLabel = () => {
     if (trackerType === 'event') {
       return intervalType === 'raw' ? "Event Logged" : "Count of Events";
     }
-    // Value-based tracker
     if (intervalType === 'raw') {
       return tracker.unit || "Value";
     }
-    const opLabel = getOperationLabel(operationType);
+    const opLabel = operationType.charAt(0).toUpperCase() + operationType.slice(1);
     if (operationType === 'count') {
       return `${opLabel} of Entries`;
     }
     return `${opLabel} ${tracker.unit}`;
   };
   
-  const chartId = `tracker-chart-${tracker.id}-${trackerType}`;
+  const chartId = `tracker-chart-${tracker.id}-${trackerType}-${intervalType}`;
 
   const chartConfig = {
     value: { 
@@ -239,22 +237,18 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
   } satisfies ChartConfig;
 
   const yAxisLabelValue = (trackerType === 'event' && (intervalType === 'raw' || operationType === 'count'))
-    ? (intervalType === 'raw' ? 'Event' : 'Count')
+    ? (intervalType === 'raw' ? '' : 'Count') // No Y-axis label for raw event scatter
     : tracker.unit;
 
 
   const getXAxisTickFormatter = () => (unixTime: number) => {
-    // Find the corresponding data point to use its dateLabel
     const point = processedChartData.find(p => p.timestamp === unixTime);
     return point ? point.dateLabel : format(new Date(unixTime), "MMM d");
   };
 
-
   const getTooltipDateFormat = (labelTimestamp: number) => {
     const point = processedChartData.find(p => p.timestamp === labelTimestamp);
     if (point) return point.dateLabel;
-
-     // Fallback based on interval if direct match not found (should not happen ideally)
      switch (intervalType) {
       case 'daily': return format(new Date(labelTimestamp), "PPP"); 
       case 'monthly': return format(new Date(labelTimestamp), "MMMM yyyy");
@@ -263,14 +257,37 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     }
   };
   
-  const getTooltipValuePrefix = () => {
-    if (intervalType === 'raw' && trackerType === 'value') return "";
-    if (trackerType === 'event') return ""; // Already handled by displayUnit
-    return `${getOperationLabel(operationType)} `;
-  }
+  const isRawEventChart = trackerType === 'event' && intervalType === 'raw';
+  const ChartComponent = isRawEventChart ? ScatterChart : (trackerType === 'event' && intervalType !== 'raw' ? BarChart : LineChart);
+  const ChartSeriesComponent = isRawEventChart ? Scatter : (trackerType === 'event' && intervalType !== 'raw' ? Bar : Line);
 
-  const ChartComponent = (trackerType === 'event' && intervalType !== 'raw') ? BarChart : LineChart;
-  const ChartSeriesComponent = (trackerType === 'event' && intervalType !== 'raw') ? Bar : Line;
+  let yAxisProps: any = {
+    stroke: "hsl(var(--muted-foreground))",
+    tickMargin: 10,
+    domain: ['auto', 'auto'],
+    allowDataOverflow: true,
+    label: yAxisLabelValue ? { 
+      value: yAxisLabelValue, 
+      angle: -90, 
+      position: 'insideLeft', 
+      offset: -5,
+      style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))', fontSize: '0.875rem' }
+    } : undefined,
+  };
+
+  if (isRawEventChart) {
+    yAxisProps = {
+      ...yAxisProps,
+      type: "number",
+      domain: [0, 2], // Simple domain for scatter points
+      ticks: [1], // Only show tick at 1
+      tickFormatter: () => '', // Hide Y-axis tick labels
+      axisLine: false, // Hide Y-axis line
+      tickLine: false, // Hide Y-axis tick lines
+      label: undefined, // No Y-axis label for raw event scatter
+      width: 10 // Minimal width for hidden Y axis
+    };
+  }
 
 
   return (
@@ -284,9 +301,9 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="interval-select" className="text-xs text-muted-foreground">Interval</Label>
+            <Label htmlFor={`${chartId}-interval-select`} className="text-xs text-muted-foreground">Interval</Label>
             <Select value={intervalType} onValueChange={handleIntervalChange}>
-              <SelectTrigger id="interval-select" className="w-full sm:w-[150px]">
+              <SelectTrigger id={`${chartId}-interval-select`} className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Select interval" />
               </SelectTrigger>
               <SelectContent>
@@ -299,13 +316,13 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
           </div>
           {trackerType === 'value' && intervalType !== 'raw' && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="operation-select" className="text-xs text-muted-foreground">Operation</Label>
+              <Label htmlFor={`${chartId}-operation-select`} className="text-xs text-muted-foreground">Operation</Label>
               <Select 
                 value={operationType} 
                 onValueChange={(value: OperationType) => setOperationType(value)} 
                 disabled={intervalType === 'raw' || trackerType === 'event'}
               >
-                <SelectTrigger id="operation-select" className="w-full sm:w-[150px]">
+                <SelectTrigger id={`${chartId}-operation-select`} className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Select operation" />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,7 +347,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
           <ResponsiveContainer>
             <ChartComponent
               data={processedChartData}
-              margin={{ top: 5, right: 30, left: 5, bottom: 20 }}
+              margin={{ top: 5, right: 30, left: isRawEventChart ? -25 : 5, bottom: 20 }} // Adjust left margin for hidden Y axis
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
@@ -343,21 +360,7 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                 interval={processedChartData.length > 30 && intervalType === 'raw' ? 'preserveStartEnd' : undefined}
                 minTickGap={intervalType === 'raw' ? 80 : (intervalType === 'daily' ? 40 : 20)}
               />
-              <YAxis 
-                stroke="hsl(var(--muted-foreground))"
-                tickMargin={10}
-                domain={trackerType === 'event' && intervalType === 'raw' ? [0, 'dataMax + 1'] : ['auto', 'auto']}
-                allowDataOverflow={true}
-                label={{ 
-                  value: yAxisLabelValue, 
-                  angle: -90, 
-                  position: 'insideLeft', 
-                  offset: -5,
-                  style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))', fontSize: '0.875rem' }
-                }}
-                ticks={trackerType === 'event' && intervalType === 'raw' ? [0, 1] : undefined}
-                tickFormatter={trackerType === 'event' && intervalType === 'raw' ? (tick) => (tick === 1 ? 'Logged' : 'No') : undefined}
-              />
+              <YAxis {...yAxisProps} />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (active && payload && payload.length && typeof label === 'number') {
@@ -365,12 +368,12 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                     const value = dataPoint.value;
                     
                     let formattedValue: string;
-                    let displayUnit: string;
+                    let displayUnit: string = "";
 
                     if (trackerType === 'event') {
                       if (intervalType === 'raw') {
-                        formattedValue = value === 1 ? "Logged" : "Not Logged";
-                        displayUnit = "";
+                        formattedValue = "Logged"; // For scatter plot, value is 1
+                        // displayUnit is already set to empty string
                       } else { // Aggregated event data (count)
                         formattedValue = Number(value).toLocaleString();
                         displayUnit = value === 1 ? 'event' : 'events';
@@ -402,14 +405,9 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                                   (Based on {dataPoint.originalDataPointCount} data point{dataPoint.originalDataPointCount !== 1 ? 's' : ''})
                               </span>
                           )}
-                          {intervalType === 'raw' && dataPoint.notes && (
+                          {dataPoint.notes && ( // Show notes for both raw and aggregated if available
                              <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
-                               Note: {dataPoint.notes}
-                             </span>
-                          )}
-                           {intervalType !== 'raw' && dataPoint.notes && ( 
-                             <span className="text-xs text-muted-foreground italic border-t pt-1 mt-1 break-words">
-                               Notes summary: {dataPoint.notes}
+                               {intervalType === 'raw' ? "Note: " : "Notes summary: "}{dataPoint.notes}
                              </span>
                           )}
                         </div>
@@ -420,25 +418,43 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
                 }}
               />
               <Legend content={<ChartLegendContent />} verticalAlign="top" />
-              <ChartSeriesComponent
-                type={ChartSeriesComponent === Line ? "monotone" : undefined}
-                dataKey="value" 
-                stroke={ChartSeriesComponent === Line ? "var(--color-value)" : undefined}
-                fill={ChartSeriesComponent === Bar ? "var(--color-value)" : undefined}
-                strokeWidth={ChartSeriesComponent === Line ? 2 : undefined}
-                dot={ChartSeriesComponent === Line ? {
-                  r: processedChartData.length < 50 || intervalType !== 'raw' ? 4 : 2,
-                  fill: "var(--color-value)",
-                  strokeWidth: 2,
-                  stroke: "hsl(var(--background))"
-                } : undefined}
-                activeDot={ChartSeriesComponent === Line ? {
-                  r: 6,
-                  fill: "var(--color-value)",
-                  strokeWidth: 2,
-                  stroke: "hsl(var(--background))"
-                } : undefined}
-              />
+              
+              {isRawEventChart ? (
+                <ChartSeriesComponent
+                  dataKey="value" 
+                  name={chartConfig.value.label}
+                  fill="var(--color-value)"
+                  shape="square"
+                  size={100} // Adjust size of the square, this might need tweaking based on data density
+                />
+              ) : ChartSeriesComponent === Bar ? (
+                 <ChartSeriesComponent
+                    dataKey="value"
+                    name={chartConfig.value.label}
+                    fill="var(--color-value)"
+                    barSize={intervalType === 'daily' ? 20 : undefined} // Adjust bar size for daily view
+                 />
+              ) : ( // Line chart
+                <ChartSeriesComponent
+                  type="monotone"
+                  dataKey="value" 
+                  name={chartConfig.value.label}
+                  stroke="var(--color-value)"
+                  strokeWidth={2}
+                  dot={{
+                    r: processedChartData.length < 50 || intervalType !== 'raw' ? 4 : 2,
+                    fill: "var(--color-value)",
+                    strokeWidth: 2,
+                    stroke: "hsl(var(--background))"
+                  }}
+                  activeDot={{
+                    r: 6,
+                    fill: "var(--color-value)",
+                    strokeWidth: 2,
+                    stroke: "hsl(var(--background))"
+                  }}
+                />
+              )}
             </ChartComponent>
           </ResponsiveContainer>
         </ChartContainer>
@@ -447,3 +463,4 @@ export function TrackerChart({ tracker, data }: TrackerChartProps) {
     </Card>
   );
 }
+
