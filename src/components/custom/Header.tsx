@@ -11,7 +11,7 @@ export function AppHeader() {
       <div className="container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center space-x-2">
           <BarChart3 className="h-6 w-6 text-primary" />
-          <span className="font-bold text-xl">Universal Tracker</span>
+          <span className="font-bold text-xl">SimplyTrack</span>
         </Link>
         <Button variant="outline" size="sm" asChild>
           <a href="mailto:sumrao.paritosh@gmail.com">

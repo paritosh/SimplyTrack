@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, PlusCircle, Edit3, Trash2, ListChecks, BarChart3, CheckSquare, CalendarDays } from 'lucide-react';
@@ -9,8 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddDataPointDialog } from '@/components/custom/AddDataPointDialog';
 import { TrackerChart } from '@/components/custom/TrackerChart';
-import { EventCalendarHeatmap } from '@/components/custom/EventCalendarHeatmap'; // Added
-import useLocalStorage from '@/hooks/use-local-storage';
+import { EventCalendarHeatmap } from '@/components/custom/EventCalendarHeatmap';
 import type { Tracker, DataPoint } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
@@ -33,6 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import * as idb from '@/lib/idb';
 
 const defaultTrackerColor = "hsl(var(--primary))";
 
@@ -41,9 +41,6 @@ export default function TrackerDetailPage() {
   const router = useRouter();
   const trackerId = params.trackerId as string;
 
-  const [rawTrackers, setRawTrackers] = useLocalStorage<Tracker[]>("trackers", []);
-  const [dataPoints, setDataPoints] = useLocalStorage<DataPoint[]>("dataPoints", []);
-  
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [trackerDataPoints, setTrackerDataPoints] = useState<DataPoint[]>([]);
   
@@ -55,105 +52,122 @@ export default function TrackerDetailPage() {
 
   const { toast } = useToast();
   const [isMounted, setIsMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    setIsMounted(true); 
-  }, []);
-
-  useEffect(() => {
-    if (isMounted) {
-      const migratedTrackers = rawTrackers.map(t => ({
-        ...t,
-        type: t.type || 'value',
-      }));
-      if (JSON.stringify(migratedTrackers) !== JSON.stringify(rawTrackers)) {
-         // This direct call to setRawTrackers might be an issue if it triggers infinite loops
-         // For now, we assume useLocalStorage handles updates without re-triggering this excessively
-      }
-      const foundTracker = migratedTrackers.find(t => t.id === trackerId);
-      if (foundTracker) {
-        setTracker(foundTracker);
-      } else if (migratedTrackers.length > 0) {
+  const fetchTrackerDetails = useCallback(async () => {
+    if (!trackerId) return;
+    setIsLoading(true);
+    try {
+      const fetchedTracker = await idb.getTrackerById(trackerId);
+      if (fetchedTracker) {
+        setTracker({
+            ...fetchedTracker,
+            type: fetchedTracker.type || 'value',
+            unit: (fetchedTracker.type === 'event' && (fetchedTracker.unit === "" || !fetchedTracker.unit)) ? 'occurrence' : fetchedTracker.unit || '',
+            color: fetchedTracker.color || defaultTrackerColor,
+            isPinned: !!fetchedTracker.isPinned,
+        });
+        const relatedDataPoints = await idb.getDataPointsByTrackerId(trackerId);
+        setTrackerDataPoints(relatedDataPoints.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      } else {
         toast({ title: "Tracker Not Found", description: "The requested tracker could not be found.", variant: "destructive" });
         router.push('/');
       }
+    } catch (error) {
+      console.error("Failed to fetch tracker details:", error);
+      toast({ title: "Error", description: "Could not load tracker data.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
-  }, [isMounted, rawTrackers, trackerId, router, toast]);
-
+  }, [trackerId, router, toast]);
 
   useEffect(() => {
-    if (!isMounted || !tracker) return; 
-
-    const relatedDataPoints = dataPoints
-      .filter(dp => dp.trackerId === tracker.id)
-      .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    setTrackerDataPoints(relatedDataPoints);
-    
-  }, [trackerId, tracker, dataPoints, isMounted]);
+    setIsMounted(true);
+    fetchTrackerDetails();
+  }, [fetchTrackerDetails]);
 
 
-  const handleSaveDataPoint = (dataPointData: Omit<DataPoint, "trackerId">, idToUpdate?: string) => {
+  const handleSaveDataPoint = async (dataPointData: Omit<DataPoint, "trackerId">, idToUpdate?: string) => {
     if (!tracker) return;
     
     const finalDataPointData = {
-        ...dataPointData,
+        ...dataPointData, // id is already in dataPointData from dialog
         value: tracker.type === 'event' ? 1 : dataPointData.value,
     };
 
-    if (idToUpdate) { 
-      setDataPoints(prevDataPoints =>
-        prevDataPoints.map(dp =>
-          dp.id === idToUpdate ? { ...finalDataPointData, trackerId: tracker.id } : dp
-        )
-      );
-      toast({ title: tracker.type === 'event' ? "Event Updated" : "Data Point Updated", description: `${tracker.type === 'event' ? 'Event' : 'Data point'} for "${tracker.name}" has been updated.` });
-    } else { 
-      const newDataPoint: DataPoint = {
-        ...finalDataPointData, 
-        trackerId: tracker.id,
-      };
-      setDataPoints(prevDataPoints => [...prevDataPoints, newDataPoint]);
-      const toastMessage = tracker.type === 'event' 
-        ? `Event "${tracker.name}" logged.` 
-        : `Value ${newDataPoint.value} for "${tracker.name}" recorded.`;
-      toast({ title: tracker.type === 'event' ? "Event Logged" : "Data Point Added", description: toastMessage });
+    try {
+      if (idToUpdate) { 
+        const dpToUpdate: DataPoint = { ...finalDataPointData, id: idToUpdate, trackerId: tracker.id };
+        await idb.updateDataPoint(dpToUpdate);
+        setTrackerDataPoints(prevDataPoints =>
+          prevDataPoints.map(dp =>
+            dp.id === idToUpdate ? dpToUpdate : dp
+          ).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        );
+        toast({ title: tracker.type === 'event' ? "Event Updated" : "Data Point Updated", description: `${tracker.type === 'event' ? 'Event' : 'Data point'} for "${tracker.name}" has been updated.` });
+      } else { 
+        const newDataPoint: DataPoint = {
+          ...finalDataPointData, 
+          trackerId: tracker.id,
+        };
+        await idb.addDataPoint(newDataPoint);
+        setTrackerDataPoints(prevDataPoints => 
+            [...prevDataPoints, newDataPoint].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        );
+        const toastMessage = tracker.type === 'event' 
+          ? `Event "${tracker.name}" logged.` 
+          : `Value ${newDataPoint.value} for "${tracker.name}" recorded.`;
+        toast({ title: tracker.type === 'event' ? "Event Logged" : "Data Point Added", description: toastMessage });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: `Could not save ${tracker.type === 'event' ? 'event' : 'data point'}.`, variant: "destructive" });
     }
     setDataPointToEdit(null); 
+    setIsDataPointDialogOpen(false);
   };
 
-  const handleSaveTracker = (trackerData: Omit<Tracker, "id" | "createdAt">) => {
+  const handleSaveTracker = async (trackerData: Omit<Tracker, "id" | "createdAt">) => {
     if (!tracker) return;
     const unit = trackerData.type === 'event' ? 'occurrence' : trackerData.unit;
-    const updatedTracker = {
+    const updatedTrackerData: Tracker = {
       ...tracker,
       ...trackerData,
-      unit: unit,
+      unit: unit!,
       color: trackerData.color || tracker.color || defaultTrackerColor,
       isPinned: trackerData.isPinned !== undefined ? trackerData.isPinned : tracker.isPinned,
     };
 
-    setRawTrackers(prevTrackers => 
-      prevTrackers.map(t => 
-        t.id === tracker.id 
-        ? updatedTracker
-        : t
-      )
-    );
-    setTracker(updatedTracker); // Update local state for current page
-    toast({ title: "Tracker Updated", description: `"${trackerData.name}" has been updated.` });
+    try {
+      await idb.updateTracker(updatedTrackerData);
+      setTracker(updatedTrackerData);
+      toast({ title: "Tracker Updated", description: `"${updatedTrackerData.name}" has been updated.` });
+    } catch (error) {
+       toast({ title: "Error", description: "Could not update tracker.", variant: "destructive" });
+    }
+    setIsEditTrackerDialogOpen(false);
   };
 
-  const handleDeleteTracker = () => {
+  const handleDeleteTracker = async () => {
     if (!tracker) return;
-    setRawTrackers(prevTrackers => prevTrackers.filter(t => t.id !== tracker.id));
-    setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.trackerId !== tracker.id));
-    toast({ title: "Tracker Deleted", description: "The tracker and its data have been deleted." });
-    router.push('/');
+    try {
+      await idb.deleteTracker(tracker.id);
+      await idb.deleteDataPointsByTrackerId(tracker.id);
+      toast({ title: "Tracker Deleted", description: "The tracker and its data have been deleted." });
+      router.push('/');
+    } catch (error) {
+      toast({ title: "Error", description: "Could not delete tracker.", variant: "destructive" });
+    }
+    setIsDeleteTrackerDialogOpen(false);
   };
 
-  const handleDeleteDataPoint = (dpId: string) => {
-    setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.id !== dpId));
-    toast({ title: tracker?.type === 'event' ? "Event Log Removed" : "Data Point Deleted", description: `The ${tracker?.type === 'event' ? 'event log' : 'data point'} has been removed.` });
+  const handleDeleteDataPoint = async (dpId: string) => {
+    try {
+      await idb.deleteDataPoint(dpId);
+      setTrackerDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.id !== dpId));
+      toast({ title: tracker?.type === 'event' ? "Event Log Removed" : "Data Point Deleted", description: `The ${tracker?.type === 'event' ? 'event log' : 'data point'} has been removed.` });
+    } catch (error) {
+      toast({ title: "Error", description: `Could not delete ${tracker?.type === 'event' ? 'event log' : 'data point'}.`, variant: "destructive" });
+    }
     setDataPointIdToDelete(null);
   };
 
@@ -167,8 +181,7 @@ export default function TrackerDetailPage() {
     setIsDataPointDialogOpen(true);
   };
 
-
-  if (!isMounted || !tracker) {
+  if (!isMounted || isLoading || !tracker) {
     return (
        <div className="space-y-6">
         <div className="animate-pulse bg-muted h-8 w-32 rounded-md mb-4"></div>
@@ -190,7 +203,6 @@ export default function TrackerDetailPage() {
   const addDataButtonText = currentTrackerType === 'event' ? "Log Event" : "Add Data Point";
   const valueColumnHeaderText = currentTrackerType === 'event' ? "Status" : `Value (${tracker.unit})`;
 
-
   return (
     <div className="space-y-8">
       <div>
@@ -207,7 +219,7 @@ export default function TrackerDetailPage() {
                 {tracker.name}
               </CardTitle>
               <CardDescription>
-                {currentTrackerType === 'value' ? `Unit: ${tracker.unit}` : `Type: Event Tracker`} | Created: {format(new Date(tracker.createdAt), "PPP")}
+                {currentTrackerType === 'value' ? `Unit: ${tracker.unit}` : `Type: Event Tracker`} | Created: {format(parseISO(tracker.createdAt), "PPP")}
               </CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -333,5 +345,3 @@ export default function TrackerDetailPage() {
     </div>
   );
 }
-
-    

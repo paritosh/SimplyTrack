@@ -1,14 +1,13 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { AddTrackerDialog } from "@/components/custom/AddTrackerDialog";
 import { TrackerCard } from "@/components/custom/TrackerCard";
 import { AddDataPointDialog } from "@/components/custom/AddDataPointDialog";
-import useLocalStorage from "@/hooks/use-local-storage";
 import type { Tracker, DataPoint } from "@/types";
-import { PlusCircle, LayoutGrid, CheckSquare, TrendingUp } from "lucide-react";
+import { PlusCircle, LayoutGrid } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Card,
@@ -27,14 +26,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import * as idb from '@/lib/idb';
 
 const defaultTrackerColor = "hsl(var(--primary))";
 
 export default function DashboardPage() {
-  const [rawTrackers, setRawTrackers] = useLocalStorage<Tracker[]>("trackers", []);
-  const [dataPoints, setDataPoints] = useLocalStorage<DataPoint[]>("dataPoints", []);
-  
   const [trackers, setTrackers] = useState<Tracker[]>([]);
+  // dataPoints state is not strictly needed on dashboard, but keeping for consistency if future features need it
+  // For now, data points are added directly via dialog, and detail page fetches its own.
   
   const [isAddTrackerDialogOpen, setIsAddTrackerDialogOpen] = useState(false);
   const [trackerToEdit, setTrackerToEdit] = useState<Tracker | undefined>(undefined);
@@ -46,70 +45,99 @@ export default function DashboardPage() {
 
   const { toast } = useToast();
   const [isMounted, setIsMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchTrackers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const fetchedTrackers = await idb.getAllTrackers();
+      const migratedTrackers = fetchedTrackers.map(t => ({
+        ...t,
+        type: t.type || 'value',
+        unit: (t.type === 'event' && (t.unit === "" || !t.unit)) ? 'occurrence' : t.unit || '',
+        color: t.color || defaultTrackerColor,
+        isPinned: !!t.isPinned,
+      }));
+      setTrackers(migratedTrackers);
+    } catch (error) {
+      console.error("Failed to fetch trackers:", error);
+      toast({ title: "Error", description: "Could not load trackers from the database.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (isMounted) {
-      const migratedTrackers = rawTrackers.map(t => ({
-        ...t,
-        type: t.type || 'value', // Ensure all trackers have a type, default to 'value'
-        unit: (t.type === 'event' && (t.unit === "" || !t.unit)) ? 'occurrence' : t.unit, // Ensure event trackers have a unit
-      }));
-      // Only update if there are actual changes to avoid infinite loops
-      if (JSON.stringify(migratedTrackers) !== JSON.stringify(rawTrackers)) {
-        setRawTrackers(migratedTrackers);
-      }
-      setTrackers(migratedTrackers);
-    }
-  }, [isMounted, rawTrackers, setRawTrackers]);
+    fetchTrackers();
+  }, [fetchTrackers]);
 
 
-  const handleSaveTracker = (trackerData: Omit<Tracker, "id" | "createdAt">, id?: string) => {
+  const handleSaveTracker = async (trackerData: Omit<Tracker, "id" | "createdAt">, id?: string) => {
     const unit = trackerData.type === 'event' ? 'occurrence' : trackerData.unit;
 
     if (id) { 
-      setRawTrackers(prevTrackers => 
-        prevTrackers.map(t => t.id === id ? { 
-            ...t, 
-            ...trackerData, 
-            unit: unit,
-            id: t.id, 
-            createdAt: t.createdAt 
-        } : t)
-      );
-      toast({ title: "Tracker Updated", description: `"${trackerData.name}" has been updated.` });
+      const existingTracker = trackers.find(t => t.id === id);
+      if (!existingTracker) return;
+
+      const updatedTracker: Tracker = {
+        ...existingTracker,
+        ...trackerData,
+        unit: unit!,
+      };
+      try {
+        await idb.updateTracker(updatedTracker);
+        setTrackers(prevTrackers => 
+          prevTrackers.map(t => t.id === id ? updatedTracker : t)
+        );
+        toast({ title: "Tracker Updated", description: `"${updatedTracker.name}" has been updated.` });
+      } catch (error) {
+        toast({ title: "Error", description: "Could not update tracker.", variant: "destructive" });
+      }
     } else { 
       const newTracker: Tracker = {
         id: Date.now().toString(), 
         createdAt: new Date().toISOString(),
         name: trackerData.name,
         type: trackerData.type || 'value',
-        unit: unit,
+        unit: unit!,
         color: trackerData.color || defaultTrackerColor,
         isPinned: !!trackerData.isPinned,
       };
-      setRawTrackers(prevTrackers => [...prevTrackers, newTracker]);
-      toast({ title: "Tracker Added", description: `"${newTracker.name}" has been added.` });
+      try {
+        await idb.addTracker(newTracker);
+        setTrackers(prevTrackers => [...prevTrackers, newTracker]);
+        toast({ title: "Tracker Added", description: `"${newTracker.name}" has been added.` });
+      } catch (error) {
+        toast({ title: "Error", description: "Could not add tracker.", variant: "destructive" });
+      }
     }
     setTrackerToEdit(undefined);
+    setIsAddTrackerDialogOpen(false);
   };
 
-  const handleSaveDataPoint = (dataPointData: Omit<DataPoint, "id" | "trackerId">) => {
+  const handleSaveDataPoint = async (dataPointData: Omit<DataPoint, "trackerId">) => {
     if (!selectedTrackerForDataPoint) return;
+    
     const newDataPoint: DataPoint = {
-      ...dataPointData,
-      id: Date.now().toString(),
+      ...dataPointData, // id is already in dataPointData from dialog
       trackerId: selectedTrackerForDataPoint.id,
       value: selectedTrackerForDataPoint.type === 'event' ? 1 : dataPointData.value,
     };
-    setDataPoints(prevDataPoints => [...prevDataPoints, newDataPoint]);
-    const toastMessage = selectedTrackerForDataPoint.type === 'event'
-      ? `Event "${selectedTrackerForDataPoint.name}" logged.`
-      : `Value ${newDataPoint.value} for "${selectedTrackerForDataPoint.name}" recorded.`;
-    toast({ title: "Data Point Added", description: toastMessage });
+    
+    try {
+      await idb.addDataPoint(newDataPoint);
+      // No need to update local dataPoints state here as this page doesn't display them directly.
+      // The tracker detail page will fetch its own data.
+      const toastMessage = selectedTrackerForDataPoint.type === 'event'
+        ? `Event "${selectedTrackerForDataPoint.name}" logged.`
+        : `Value ${newDataPoint.value} for "${selectedTrackerForDataPoint.name}" recorded.`;
+      toast({ title: "Data Point Added", description: toastMessage });
+      setIsAddDataPointDialogOpen(false);
+      setSelectedTrackerForDataPoint(null);
+    } catch (error) {
+        toast({ title: "Error", description: "Could not add data point.", variant: "destructive" });
+    }
   };
 
   const openAddDataPointDialog = (trackerId: string) => {
@@ -125,32 +153,35 @@ export default function DashboardPage() {
     setIsAddTrackerDialogOpen(true);
   };
   
-  const handleDeleteTracker = (trackerId: string) => {
-    setRawTrackers(prevTrackers => prevTrackers.filter(t => t.id !== trackerId));
-    setDataPoints(prevDataPoints => prevDataPoints.filter(dp => dp.trackerId !== trackerId));
-    toast({ title: "Tracker Deleted", description: "The tracker and its data have been deleted." });
+  const handleDeleteTracker = async (trackerId: string) => {
+    try {
+      await idb.deleteTracker(trackerId);
+      await idb.deleteDataPointsByTrackerId(trackerId); // Also delete associated data points
+      setTrackers(prevTrackers => prevTrackers.filter(t => t.id !== trackerId));
+      toast({ title: "Tracker Deleted", description: "The tracker and its data have been deleted." });
+    } catch (error) {
+      toast({ title: "Error", description: "Could not delete tracker.", variant: "destructive" });
+    }
     setTrackerToDelete(null);
   };
 
-  const handleTogglePin = (trackerId: string) => {
-    let trackerName = "";
-    let isNowPinned = false;
-    setRawTrackers(prevTrackers =>
-      prevTrackers.map(t => {
-        if (t.id === trackerId) {
-          trackerName = t.name;
-          isNowPinned = !t.isPinned;
-          return { ...t, isPinned: !t.isPinned };
-        }
-        return t;
-      })
-    );
-    if (trackerName) {
-      toast({ title: isNowPinned ? "Tracker Pinned" : "Tracker Unpinned", description: `"${trackerName}" has been ${isNowPinned ? 'pinned' : 'unpinned'}.` });
+  const handleTogglePin = async (trackerId: string) => {
+    const tracker = trackers.find(t => t.id === trackerId);
+    if (!tracker) return;
+
+    const updatedTracker = { ...tracker, isPinned: !tracker.isPinned };
+    try {
+      await idb.updateTracker(updatedTracker);
+      setTrackers(prevTrackers =>
+        prevTrackers.map(t => t.id === trackerId ? updatedTracker : t)
+      );
+      toast({ title: updatedTracker.isPinned ? "Tracker Pinned" : "Tracker Unpinned", description: `"${updatedTracker.name}" has been ${updatedTracker.isPinned ? 'pinned' : 'unpinned'}.` });
+    } catch (error) {
+       toast({ title: "Error", description: "Could not update pin status.", variant: "destructive" });
     }
   };
 
-  if (!isMounted) {
+  if (!isMounted || isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -169,7 +200,10 @@ export default function DashboardPage() {
   const sortedTrackers = [...trackers].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    // Fallback sort by creation date if pinning status is the same or not present
+    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return dateB - dateA;
   });
 
   return (
@@ -220,7 +254,10 @@ export default function DashboardPage() {
       />
       <AddDataPointDialog
         isOpen={isAddDataPointDialogOpen}
-        onClose={() => setIsAddDataPointDialogOpen(false)}
+        onClose={() => {
+          setIsAddDataPointDialogOpen(false);
+          setSelectedTrackerForDataPoint(null);
+        }}
         onSave={handleSaveDataPoint}
         tracker={selectedTrackerForDataPoint}
       />
